@@ -34,7 +34,9 @@ async def sentry_webhook(request: Request):
         "title": payload.get("title", "Unknown error"),
         "message": payload.get("message", ""),
         "error_type": payload.get("type"),
-        "stack_trace": payload.get("stacktrace", {}).get("raw", "") if isinstance(payload.get("stacktrace"), dict) else "",
+        "stack_trace": payload.get("stacktrace", {}).get("raw", "")
+        if isinstance(payload.get("stacktrace"), dict)
+        else "",
         "url": payload.get("url"),
         "raw_payload": payload,
         "status": "open",
@@ -86,5 +88,6 @@ def health():
 
 if __name__ == "__main__":
     import uvicorn
+
     port = int(os.getenv("PORT", "8000"))
     uvicorn.run(app, host="0.0.0.0", port=port)

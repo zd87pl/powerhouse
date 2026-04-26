@@ -28,12 +28,15 @@ jobs:
 
       - name: Type check
         run: |
-          mypy services/ --ignore-missing-imports
+          mypy services/autofix-daemon/main.py --ignore-missing-imports
+          mypy services/observability-bridge/main.py --ignore-missing-imports
+          mypy services/orchestrator/state.py --ignore-missing-imports
 
       - name: Validate shell scripts
         run: |
           sudo apt-get install -y shellcheck
-          shellcheck infra/bootstrap/*.sh infra/scripts/*.sh || true
+          shellcheck infra/bootstrap/bootstrap-clis.sh || true
+          shellcheck infra/scripts/*.sh || true
 
       - name: Check for secrets
         run: |

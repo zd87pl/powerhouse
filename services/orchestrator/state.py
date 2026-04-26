@@ -1,4 +1,5 @@
 """Track multi-agent swarm workflow state."""
+
 import json
 import time
 from pathlib import Path
@@ -11,7 +12,15 @@ STATE_DIR.mkdir(parents=True, exist_ok=True)
 class SwarmRun:
     """Persistent state for one swarm execution."""
 
-    STATUSES = ["pending", "architect", "coding", "review", "revising", "done", "failed"]
+    STATUSES = [
+        "pending",
+        "architect",
+        "coding",
+        "review",
+        "revising",
+        "done",
+        "failed",
+    ]
 
     def __init__(self, task_id: str, spec: str, project: str):
         self.task_id = task_id

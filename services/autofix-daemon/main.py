@@ -59,7 +59,7 @@ def diagnose(error_title: str, error_message: str) -> dict:
         "1. Root cause diagnosis (2-3 sentences)\n"
         "2. Proposed fix (code patch or specific change)\n"
         "3. File(s) likely affected\n\n"
-        "Respond in JSON: {\"diagnosis\": \"...\", \"patch\": \"...\", \"files\": [\"...\"]}"
+        'Respond in JSON: {"diagnosis": "...", "patch": "...", "files": ["..."]}'
     )
 
     user_prompt = f"Error title: {error_title}\n\nError message:\n{error_message}"
@@ -91,7 +91,9 @@ def diagnose(error_title: str, error_message: str) -> dict:
         return {"diagnosis": f"Parse error: {e}", "patch": None}
 
 
-def open_github_pr(repo: str, branch: str, title: str, body: str, patch: str) -> str | None:
+def open_github_pr(
+    repo: str, branch: str, title: str, body: str, patch: str
+) -> str | None:
     """Open a PR with the proposed fix."""
     if not GITHUB_TOKEN:
         return None
