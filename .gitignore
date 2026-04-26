@@ -1,0 +1,44 @@
+# ─── Secrets ────────────────────────────────────────────
+*.env
+*.envrc
+!infra/bootstrap/.envrc.example
+secrets/
+
+# ─── Data & Cache ───────────────────────────────────────
+/data/
+data/
+chroma-data/
+n8n-data/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ─── Node ───────────────────────────────────────────────
+node_modules/
+.npm
+*.log
+npm-debug.log*
+
+# ─── IDE ────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ─── OS ─────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ─── Project Artifacts ──────────────────────────────────
+projects/*/
+!projects/.gitkeep

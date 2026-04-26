@@ -1,0 +1,56 @@
+#!/bin/bash
+# Example environment file for Powerhouse
+# COPY THIS to a real .envrc and fill in your secrets
+# NEVER commit the real file — it is gitignored automatically
+
+# ─── LLM / Model Routing ────────────────────────────────────────────────────
+export OPENROUTER_API_KEY=""
+export LITELLM_API_KEY=""            # Optional: if running LiteLLM proxy
+
+# ─── Cloud Providers ────────────────────────────────────────────────────────
+export FLY_API_TOKEN=""
+export RUNPOD_API_TOKEN=""
+export VERCEL_TOKEN=""
+export CLOUDFLARE_API_TOKEN=""
+
+# ─── Database ───────────────────────────────────────────────────────────────
+export SUPABASE_ACCESS_TOKEN=""
+export NEON_API_KEY=""               # Alternative to Supabase
+
+# ─── Auth & Identity ────────────────────────────────────────────────────────
+export GITHUB_TOKEN=""               # Repo access, PRs, issues
+export CLERK_SECRET_KEY=""           # SaaS tenant auth
+export CLERK_PUBLISHABLE_KEY=""
+
+# ─── Monitoring ─────────────────────────────────────────────────────────────
+export SENTRY_AUTH_TOKEN=""          # Error ingestion + autofix
+export PHOENIX_API_KEY=""            # Arize Phoenix (opt-out tracing)
+
+# ─── Commerce ───────────────────────────────────────────────────────────────
+export SHOPIFY_STORE_DOMAIN=""
+export SHOPIFY_STOREFRONT_PUBLIC_TOKEN=""
+export SHOPIFY_ADMIN_TOKEN=""
+
+# ─── Search & Email ─────────────────────────────────────────────────────────
+export EXA_API_KEY=""
+export RESEND_API_KEY=""             # Transactional email
+
+# ─── Billing ────────────────────────────────────────────────────────────────
+export STRIPE_SECRET_KEY=""
+export STRIPE_PUBLISHABLE_KEY=""
+export STRIPE_WEBHOOK_SECRET=""
+
+# ─── Internal ───────────────────────────────────────────────────────────────
+export POWERHOUSE_DATA_DIR="/data/powerhouse"
+
+# ─── Shell Setup ────────────────────────────────────────────────────────────
+export PATH="/data/powerhouse/hermes/bin:$HOME/.hermes/npm-global/bin:$PATH"
+
+export FLYCTL_INSTALL="/data/powerhouse/hermes/flyctl"
+export PATH="$FLYCTL_INSTALL/bin:$PATH"
+
+export NPM_CONFIG_PREFIX="$HOME/.hermes/npm-global"
+export PATH="$NPM_CONFIG_PREFIX/bin:$PATH"
+
+# Convenience alias
+alias reload-secrets='set -a && source "/data/powerhouse/hermes/secrets/.env" && set +a && echo "Secrets reloaded"'

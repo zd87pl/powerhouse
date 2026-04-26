@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install lint tools
+        run: |
+          pip install ruff mypy
+
+      - name: Lint Python code
+        run: |
+          ruff check services/
+          ruff format --check services/
+
+      - name: Type check
+        run: |
+          mypy services/ --ignore-missing-imports
+
+      - name: Validate shell scripts
+        run: |
+          sudo apt-get install -y shellcheck
+          shellcheck infra/bootstrap/*.sh infra/scripts/*.sh || true
+
+      - name: Check for secrets
+        run: |
+          ! grep -r "sk-" services/ infra/ || true
+          ! grep -r "ghp_" services/ infra/ || true
+          ! grep -r "AKIA" services/ infra/ || true
+
+      - name: Check no .env committed
+        run: |
+          test ! -f .env
+          test ! -f infra/bootstrap/.envrc
