@@ -1,5 +1,7 @@
 <div align="center">
 
+![Powerhouse Banner](docs/assets/banner.png)
+
 # ⚡ POWERHOUSE
 
 ### **Build software that builds itself.**
