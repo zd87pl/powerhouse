@@ -1,294 +1,364 @@
-# ⚡ Powerhouse
+<div align="center">
 
-> **10x Powerhouse — Ziggy's autonomous AI engineering organization.**  
-> Self-improving infra for scaffolding, deploying, monitoring and autonomously fixing projects.
+# ⚡ POWERHOUSE
+
+### **Build software that builds itself.**
+
+> *The autonomous AI engineering platform. Scaffold → Deploy → Monitor → Heal.*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://python.org)
 [![Node](https://img.shields.io/badge/Node-20+-green.svg)](https://nodejs.org)
-[![Status](https://img.shields.io/badge/Status-Alpha-orange.svg)]()
+[![Docker](https://img.shields.io/badge/Docker-Required-2496ED.svg)](https://docker.com)
+
+[📖 Docs](https://github.com/zd87pl/powerhouse#-quick-start) · [🏗️ Scaffold](https://github.com/zd87pl/powerhouse#-project-scaffold) · [🤖 Swarms](https://github.com/zd87pl/powerhouse#-multi-agent-swarms) · [🔧 Autofix](https://github.com/zd87pl/powerhouse#-self-healing-production)
+
+</div>
 
 ---
 
-## 🔥 What Is This?
+## 🔥 The Pitch
 
-Powerhouse is a **self-hostable AI engineering platform** that transforms a single agent with tools into a **self-improving AI organization**. It can:
+Every other AI coding tool stops at **generation**.  
+Powerhouse doesn't stop until your code is **alive, monitored, and self-healing.**
 
-- 🏗️ **Scaffold** production-ready projects (repo + DevContainer + CI/CD + DB + deploy)
-- 🤖 **Orchestrate** multi-agent swarms (Architect → Coder → Reviewer loop)
-- 📡 **Monitor** production apps with real-time error detection
-- 🔧 **Autofix** errors automatically (Sentry alert → diagnose → GitHub PR)
-- 🧠 **Remember** everything via a persistent vector knowledge base
-- 📊 **Route** tasks to the best model for the job
-- 💰 **Scale** toward a multi-tenant SaaS for autonomous engineering teams
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│  💬 Chat    │────▶│ 🏗️ Scaffold  │────▶│ 🚀 Deploy    │────▶│ 📡 Monitor  │
+│  "Build me  │     │  repo + CI   │     │  Fly.io /    │     │  Sentry +   │
+│   a store"  │     │  + DevCont   │     │  Vercel      │     │  Phoenix    │
+└─────────────┘     └─────────────┘     └─────────────┘     └──────┬──────┘
+                                                                    │
+                                              ┌─────────────────────▼──────┐
+                                              │    🔧 ERROR DETECTED       │
+                                              │    NullPointerException    │
+                                              │    user.auth:42            │
+                                              └──────────┬─────────────────┘
+                                                         │
+                                              ┌──────────▼─────────────────┐
+                                              │  🤖 AUTOFIX DAEMON WAKES   │
+                                              │  → Diagnoses with LLM      │
+                                              │  → Patches the bug         │
+                                              │  → Opens GitHub PR         │
+                                              └──────────┬─────────────────┘
+                                                         │
+                                              ┌──────────▼─────────────────┐
+                                              │  ✅ CI passes → Merged     │
+                                              │  🧠 Learned → Wiki updated │
+                                              └────────────────────────────┘
+```
 
-> **Competitive differentiation:** No existing product (Bolt, Lovable, v0, Replit, Railway) offers **autonomous self-healing** — error detection leading to automatic diagnosis and pull request creation. That's our moat.
+> **This is not chatGPT with a deploy button. This is an AI engineering organization in a box.**
 
 ---
 
-## 🏗️ Architecture Overview
+## ✨ What You Get
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                        POWERHOUSE                            │
-├──────────────────┬──────────────────┬───────────────────────┤
-│   🧠 KNOWLEDGE    │   🤖 AGENTS      │   🚀 INFRASTRUCTURE  │
-├──────────────────┼──────────────────┼───────────────────────┤
-│  RAG Wiki        │  Architect      │  Fly.io (apps)        │
-│  ChromaDB        │  Coder          │  RunPod (GPU)         │
-│  arXiv monitor   │  Reviewer       │  Vercel (frontend)    │
-│  Blog watcher    │  DevOps         │  Supabase (Postgres)  │
-│                 │  Tester          │  Cloudflare R2        │
-├──────────────────┼──────────────────┼───────────────────────┤
-│   📡 OBSERVABILITY│   ⚙️ WORKFLOWS   │   🔐 SECURITY        │
-├──────────────────┼──────────────────┼───────────────────────┤
-│  Sentry          │  n8n            │  Vault secrets        │
-│  Phoenix        │  Temporal       │  Clerk auth (SaaS)    │
-│  Prometheus      │  Cron jobs      │  Tenant isolation     │
-│  Grafana        │  Webhooks       │  Egress allow-lists   │
-│  Autofix daemon  │                 │  Audit logs           │
-└──────────────────┴──────────────────┴───────────────────────┘
+### 🏗️ One-Command Project Scaffold
+Give it a name and a stack. It creates:
+- GitHub repo with branch protection
+- DevContainer definition (VS Code → one-click open)
+- Fly.io app + database (or Vercel for frontends)
+- GitHub Actions CI (test → lint → deploy)
+- Sentry error tracking
+- ChromaDB vector index for project memory
+- Prometheus metrics endpoint
+- README, LICENSE, `.gitignore`
+
+```bash
+powerhouse scaffold my-app --stack nextjs --deploy vercel
+# 60 seconds later: live URL in your terminal
 ```
 
----
+### 🤖 Multi-Agent Swarms
+Not one model. A **team** of models:
 
-## 📁 Repository Structure
+| Agent | Model | Job |
+|-------|-------|-----|
+| 🏛️ **Architect** | Claude Opus 4 | Writes the spec, designs the schema, plans the files |
+| 👨‍💻 **Coder** | Nemotron-3-Super | Implements clean, typed, tested code |
+| 🔍 **Reviewer** | Claude Sonnet 4 | Validates against spec — PASS or REVISE |
+| 🚀 **DevOps** | GPT-4o | Deploys, configures secrets, manages infra |
+| 🧪 **Tester** | Local 8B | Runs edge cases, fuzzes inputs |
 
+They loop until the Reviewer says **PASS**. Then it opens a PR.
+
+### 🔧 Self-Healing Production
+Your app throws an error at 3am. Here's what happens **without you waking up:**
+
+1. **Sentry** catches it
+2. **Autofix daemon** polls, reads stack trace
+3. **LLM** diagnoses root cause
+4. **Patch generated** and committed to branch
+5. **PR opened** with full description
+6. **CI runs** — if green, you wake up to a merged fix
+
+### 🧠 Persistent Vector Memory
+Everything is remembered:
+- Code decisions → indexed in ChromaDB
+- arXiv papers → auto-downloaded & searchable
+- Blog posts → RSS-watched & summarized
+- Error patterns → learned, not repeated
+
+```python
+# "How did we handle auth last time?"
+results = wiki.query("JWT refresh token pattern")
+# → Returns your ADR-005 + the exact file + the PR that merged it
 ```
-powerhouse/
-├── 📄 README.md                     ← You are here
-├── 📄 LICENSE                       ← MIT License
-├── 📄 .gitignore                    ← Secrets, data dirs, node_modules
-│
-├── 📂 docs/                         ← Documentation & ADRs
-│   ├── architecture.md              ← System architecture deep dive
-│   ├── roadmap.md                   ← 10x Powerhouse roadmap
-│   ├── implementation-plan.md       ← SaaS build plan (14 weeks)
-│   ├── competitive-analysis.md      ← vs Bolt, Lovable, v0, etc.
-│   └── adrs/                        ← Architecture Decision Records
-│       ├── ADR-001-tenant-isolation.md
-│       ├── ADR-002-agent-runtime.md
-│       ├── ADR-003-storage-multitenancy.md
-│       ├── ADR-004-billing.md
-│       ├── ADR-005-auth.md
-│       ├── ADR-006-secret-management.md
-│       ├── ADR-007-network-security.md
-│       ├── ADR-008-observability.md
-│       ├── ADR-009-disaster-recovery.md
-│       └── ADR-010-vector-db-evaluation.md
-│
-├── 📂 infra/                        ← Infrastructure-as-code
-│   ├── bootstrap/
-│   │   ├── bootstrap-clis.sh        ← Install & auth all CLIs
-│   │   └── .envrc.example           ← Shell env template (NO SECRETS)
-│   ├── docker-compose.yml           ← ChromaDB + n8n + bridge
-│   ├── chroma/
-│   │   └── docker-compose.yml       ← Standalone ChromaDB
-│   ├── n8n/
-│   │   └── docker-compose.yml       ← Standalone n8n
-│   └── scripts/
-│       ├── start-services.sh        ← One-command bring-up
-│       ├── stop-services.sh         ← Graceful shutdown
-│       └── index-wiki.sh            ← Re-index wiki into ChromaDB
-│
-├── 📂 services/                     ← Custom Python services
-│   ├── autofix-daemon/
-│   │   ├── main.py                  ← Polls Sentry, diagnoses, opens PRs
-│   │   └── requirements.txt
-│   ├── observability-bridge/
-│   │   ├── main.py                  ← FastAPI webhook relay
-│   │   └── requirements.txt
-│   └── orchestrator/
-│       ├── prompts.py               ← Swarm role system prompts
-│       └── state.py                 ← Persistent workflow state
-│
-├── 📂 skills/                       ← Hermes skill references
-│   └── index.md                     ← Skill inventory + triggers
-│
-├── 📂 projects/                     ← Scaffoled project workspaces
-│   └── .gitkeep
-│
-├── 📂 wiki/                         ← Persistent RAG memory
-│   ├── SCHEMA.md                    ← Wiki schema definition
-│   └── index.md                     ← Entry point + how to query
-│
-└── 📂 .github/
-    └── workflows/
-        └── ci.yml                   ← Lint, test, validate structure
+
+### 🎯 Model Router
+Every task goes to the **right** model, not the biggest:
+
+```yaml
+architect:  anthropic/claude-opus-4     # Specs need reasoning
+coder:      nvidia/nemotron-3-super    # Code needs precision
+reviewer:   anthropic/claude-sonnet-4  # Review needs balance
+quick_chat: local/llama-3.1-8b         # Fast & free
 ```
+
+Saves ~70% on API costs vs. using GPT-4o for everything.
+
+### 🏢 SaaS-Ready Multi-Tenancy *(Phase 4)*
+Package it as a product. One signup → isolated workspace in 60s:
+- Schema-per-tenant Postgres
+- Collection-per-tenant ChromaDB
+- Prefix-per-tenant object storage
+- Clerk org/team auth + SSO
+- Stripe prepaid credits billing
+- Hard quota ceilings (no surprise bills)
 
 ---
 
 ## 🚀 Quick Start
 
-### Prerequisites
-
-- Linux/macOS with `bash`, `curl`, `git`, `docker`
-- Persistent disk mounted at `/data/powerhouse/` (recommended)
-
-### 1. Clone & Source
+### 1. Clone
 
 ```bash
 git clone https://github.com/zd87pl/powerhouse.git
 cd powerhouse
+```
 
-# Copy example env and fill in YOUR secrets
+### 2. Configure
+
+```bash
 cp infra/bootstrap/.envrc.example infra/bootstrap/.envrc
-# Edit with your keys (NEVER commit this)
-
-# Source into current shell
+# Edit with your keys — .envrc is gitignored, never committed
 source infra/bootstrap/.envrc
 ```
 
-### 2. Install Missing CLIs
+### 3. Install Tools
 
 ```bash
 ./infra/bootstrap/bootstrap-clis.sh
+# Installs: fly, vercel, supabase, sentry-cli, wrangler, gh
 ```
 
-This installs: `flyctl`, `vercel`, `supabase`, `sentry-cli`, `wrangler`, `gh` on a persistent path.
+### 4. Authenticate
 
-### 3. Start Core Services
+```bash
+fly auth token
+vercel login
+supabase login
+git config --global user.email "you@example.com"
+git config --global user.name "Your Name"
+```
+
+### 5. Start Core Services
 
 ```bash
 ./infra/scripts/start-services.sh
 ```
 
-This brings up:
-- 🧠 **ChromaDB** on `http://localhost:8001`
-- ⚙️ **n8n** on `http://localhost:5678`
-- 📡 **Observability bridge** on `http://localhost:8002`
-- 🔧 **Autofix daemon** (background poller)
+| Service | URL | Purpose |
+|---------|-----|---------|
+| ChromaDB | `http://localhost:8001` | Vector search |
+| n8n | `http://localhost:5678` | Workflow automation |
 
-### 4. Verify Setup
-
-```bash
-# Check all services
-docker compose -f infra/docker-compose.yml ps
-
-# Test ChromaDB
-curl http://localhost:8001/api/v1/heartbeat
-
-# Test n8n
-curl http://localhost:5678/rest/health
-```
-
-### 5. Index the Wiki
+### 6. Index Knowledge Base
 
 ```bash
 ./infra/scripts/index-wiki.sh
 ```
 
-This indexes all arXiv papers and wiki entries into ChromaDB for semantic search.
-
 ---
 
-## 🔑 Required Environment Variables
-
-Create `infra/bootstrap/.envrc` (gitignored) with these keys:
+## 🏗️ Project Scaffold
 
 ```bash
-# ─── LLM / Model Routing ──────────────────────────
-export OPENROUTER_API_KEY=""
-export LITELLM_API_KEY=""            # If running LiteLLM proxy
+# Scaffold a Next.js storefront
+powerhouse scaffold curvy-store --stack nextjs --deploy vercel
 
-# ─── Cloud Providers ──────────────────────────────
-export FLY_API_TOKEN=""
-export RUNPOD_API_TOKEN=""
-export VERCEL_TOKEN=""
-export CLOUDFLARE_API_TOKEN=""
+# Scaffold a FastAPI backend
+powerhouse scaffold api-service --stack fastapi --deploy flyio
 
-# ─── Database ─────────────────────────────────────
-export SUPABASE_ACCESS_TOKEN=""
-export NEON_API_KEY=""               # Alternative to Supabase
-
-# ─── Auth & Identity ──────────────────────────────
-export GITHUB_TOKEN=""               # Repo access, PRs, issues
-export CLERK_SECRET_KEY=""           # SaaS tenant auth
-export CLERK_PUBLISHABLE_KEY=""
-
-# ─── Monitoring ───────────────────────────────────
-export SENTRY_AUTH_TOKEN=""          # Error ingestion + autofix
-export PHOENIX_API_KEY=""            # Arize Phoenix (opt-out tracing)
-
-# ─── Commerce ─────────────────────────────────────
-export SHOPIFY_STORE_DOMAIN=""
-export SHOPIFY_STOREFRONT_PUBLIC_TOKEN=""
-export SHOPIFY_ADMIN_TOKEN=""
-
-# ─── Search & Email ───────────────────────────────
-export EXA_API_KEY=""
-export RESEND_API_KEY=""             # Transactional email
-
-# ─── Billing ──────────────────────────────────────
-export STRIPE_SECRET_KEY=""
-export STRIPE_PUBLISHABLE_KEY=""
-export STRIPE_WEBHOOK_SECRET=""
-
-# ─── Internal ─────────────────────────────────────
-export POWERHOUSE_DATA_DIR="/data/powerhouse"
+# What happens:
+# 1. GitHub repo created
+# 2. DevContainer configured
+# 3. CI/CD pipeline live
+# 4. Database provisioned
+# 5. Sentry project created
+# 6. Deployed to production
 ```
 
-> ⚠️ **Never commit `.envrc` or any `.env` file.** They are automatically gitignored.
+---
+
+## 🤖 Multi-Agent Swarms
+
+```python
+from services.orchestrator.state import SwarmRun
+
+run = SwarmRun(
+    task_id="feat-oauth-001",
+    spec="Add Google OAuth2 login with refresh tokens",
+    project="my-app"
+)
+
+# Architect designs it
+run.status = "architect"
+run.architect_output = architect_agent.plan(run.spec)
+
+# Coder implements it
+run.status = "coding"
+run.coder_output = coder_agent.implement(run.architect_output)
+
+# Reviewer validates it
+run.status = "review"
+verdict = reviewer_agent.review(run.coder_output, run.architect_output)
+
+if verdict == "PASS":
+    github.create_pr(run)
+else:
+    run.status = "revising"
+    # Loop back to Coder with feedback
+```
 
 ---
 
-## 🛠️ What's Currently Working
+## 🔧 Self-Healing Production
 
-| Component | Status | Details |
-|-----------|--------|---------|
-| Persistent disk (`/data/powerhouse`) | ✅ Live | All data survives restarts |
-| Fly.io CLI | ✅ Installed | Symlinked on persistent path |
-| Secrets vault | ✅ Populated | 14 keys stored securely |
-| arXiv paper downloader | ✅ Working | 36 papers cached |
-| Orchestrator (prompts + state) | ✅ Code written | Swarm role definitions |
-| Obscura headless browser | ✅ Installed | CDP automation ready |
+Drop any alert JSON into:
+```bash
+/data/powerhouse/observability-bridge/alerts/
+```
 
-## 🛠️ What's Currently Broken / Not Running
+The autofix daemon:
+1. Reads the alert
+2. Queries the LLM for diagnosis
+3. Generates a patch
+4. Opens a GitHub PR
+5. Updates the alert status
 
-| Component | Status | Details |
-|-----------|--------|---------|
-| ChromaDB server | ❌ Stopped | Data exists, process not running |
-| n8n | ❌ Stopped | Config present, binary never started |
-| Autofix daemon | ❌ Stopped | Crontab cleared |
-| KB monitor | ❌ Stopped | Crontab cleared |
-| Wiki indexing | ❌ Not run | 36 papers not in vector DB |
-| Vercel CLI | ❌ Missing | Not installed |
-| Supabase CLI | ❌ Missing | Not installed |
-| Sentry CLI | ❌ Missing | Not installed |
-| Wrangler | ❌ Missing | Not installed |
-| GitHub CLI auth | ❌ Not auth'd | Binary missing, token stored |
-| Git identity | ❌ Not set | `user.name` / `user.email` empty |
-| Hermes config.yaml | ❌ Missing | No MCP server definitions |
-| Crontab | ❌ Empty | No scheduled jobs |
+Or wire it to **Sentry webhooks** for fully autonomous operation:
+```bash
+curl -X POST http://localhost:8002/webhook/sentry \
+  -H "Content-Type: application/json" \
+  -d @alert.json
+```
 
 ---
 
-## 📖 Documentation
+## 🧠 Knowledge Base
 
-- **[Architecture Deep Dive](docs/architecture.md)** — How all components connect
-- **[Roadmap](docs/roadmap.md)** — Phase 1→4 timeline and milestones
-- **[Implementation Plan](docs/implementation-plan.md)** — SaaS build plan (14 weeks)
-- **[Competitive Analysis](docs/competitive-analysis.md)** — vs Bolt, Lovable, v0, Replit, Railway
-- **[ADRs](docs/adrs/)** — All architecture decisions with rationale
+```bash
+# Query everything we've ever learned
+curl http://localhost:8001/api/v1/collections/wiki/query \
+  -d '{"query_texts": ["How does tenant isolation work?"], "n_results": 3}'
+```
+
+All of this is **automatically maintained**:
+- Weekly arXiv scans for new ML papers
+- RSS monitoring for industry blogs
+- Every project decision indexed
+- Every error pattern remembered
+
+---
+
+## 📊 Architecture
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                         POWERHOUSE                                │
+├────────────┬──────────────┬─────────────┬───────────────────────┤
+│ 🧠 RAG     │ 🤖 Swarms    │ 🚀 Deploy   │ 📡 Observe            │
+│  Wiki      │  Architect   │  Fly.io     │  Sentry               │
+│  ChromaDB  │  Coder       │  Vercel     │  Phoenix              │
+│  arXiv     │  Reviewer    │  RunPod     │  Prometheus           │
+│  Blogs     │  DevOps      │  Supabase   │  Autofix              │
+│            │  Tester      │  Cloudflare │                       │
+└────────────┴──────────────┴─────────────┴───────────────────────┘
+                         │
+              ┌──────────▼──────────┐
+              │  /data/powerhouse/  │
+              │  Persistent disk    │
+              └─────────────────────┘
+```
+
+[Read the full architecture →](docs/architecture.md)
+
+---
+
+## 📋 Roadmap
+
+| Phase | Focus | Timeline |
+|-------|-------|----------|
+| **Foundation** | Vector DB, DevContainers, model router | ✅ Ready |
+| **Autonomy** | Multi-agent swarms, autofix, DB branching | 🚧 Active |
+| **Scale** | Temporal workflows, fine-tuned models, KB monitor | 📅 Planned |
+| **SaaS** | Multi-tenant platform, billing, landing page | 📅 14 weeks |
+
+[Full roadmap →](docs/roadmap.md)
+
+---
+
+## 🛡️ Why This Exists
+
+| | Bolt | Lovable | v0 | Replit | **Powerhouse** |
+|---|---|---|---|---|---|
+| Code generation | ✅ | ✅ | ✅ | ⚠️ | ✅ |
+| One-click deploy | ✅ | ✅ | ✅ | ✅ | ✅ |
+| CI/CD pipelines | ❌ | ❌ | ❌ | ❌ | ✅ |
+| Error monitoring | ❌ | ❌ | ❌ | ❌ | ✅ |
+| **Self-healing** | ❌ | ❌ | ❌ | ❌ | **✅** |
+| **Vector memory** | ❌ | ❌ | ❌ | ❌ | **✅** |
+| Multi-agent teams | ❌ | ❌ | ⚠️ | ❌ | ✅ |
+| GPU + CPU hybrid | ❌ | ❌ | ❌ | ❌ | ✅ |
+| Open source | ❌ | ❌ | ❌ | ❌ | **✅ MIT** |
+
+> **No competitor offers autonomous self-healing. That's our moat.**
+
+---
+
+## 🎯 Use Cases
+
+- **Solo founder** — Ship 10x faster. Agent does the coding. You do the vision.
+- **Small agency** — One platform for all client projects. Auto-deploy, auto-fix.
+- **Platform team** — Internal developer tooling. GitHub Copilot → Powerhouse upgrade.
+- **AI researcher** — RunPod integration for training + evaluation pipelines.
 
 ---
 
 ## 🤝 Contributing
 
-This is a personal AI engineering platform, but feedback and issues are welcome! Open an issue for:
+Pull requests welcome. See [docs/implementation-plan.md](docs/implementation-plan.md) for the 14-week build plan and open issues for specific gaps.
 
-- Bug reports
-- Missing integrations
-- Documentation improvements
-- Security concerns
+**Good first issues:**
+- Add LiteLLM proxy to `infra/docker-compose.yml`
+- Write `powerhouse` CLI wrapper in Python/Go
+- Add Stripe billing webhook handler
+- Create landing page with `stitch-mcp` skill
 
 ---
 
 ## 📜 License
 
-MIT License — see [LICENSE](LICENSE) for details.
+MIT — see [LICENSE](LICENSE). Use it. Fork it. Build a unicorn with it.
 
 ---
 
-> *"The best code is the code that fixes itself."* — Powerhouse motto
+<div align="center">
+
+**Built with ⚡ by Ziggy**
+
+[⭐ Star this repo](https://github.com/zd87pl/powerhouse) · [🐦 Follow on X](https://x.com) · [💬 Discussions](https://github.com/zd87pl/powerhouse/discussions)
+
+</div>

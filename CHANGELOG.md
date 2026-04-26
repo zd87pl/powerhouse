@@ -1,0 +1,40 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+### Added
+- Initial repository scaffold
+- 10 Architecture Decision Records (ADRs 001-010)
+- Docker Compose stacks for ChromaDB and n8n
+- Bootstrap script for all CLIs
+- Autofix daemon service
+- Observability bridge (FastAPI webhooks)
+- Multi-agent swarm orchestrator (prompts + state)
+- Wiki schema and indexing pipeline
+- 114-skill inventory
+- GitHub CI workflow (lint, typecheck, secrets scan)
+- MIT license
+
+### Planned
+- Project scaffold skill execution
+- Phoenix tracing integration
+- RunPod training pipeline
+- Landing page deployment
+- Stripe billing webhook
+- Clerk auth integration
+- Temporal workflow engine
+
+---
+
+## Release cadence
+
+- **Patch** (0.0.x): Bug fixes, docs
+- **Minor** (0.x.0): New features, skills
+- **Major** (x.0.0): Breaking API changes
+
+*We are pre-1.0. APIs may change without notice.*
