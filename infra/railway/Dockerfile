@@ -25,9 +25,11 @@ EXPOSE 8000
 CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT}"]
 
 # ─── Full-stack (Next.js frontend + FastAPI backend as one service) ───────
-FROM base AS fullstack
+FROM python:3.11-slim AS fullstack
+WORKDIR /app
 COPY package*.json requirements.txt ./
-RUN npm ci && pip install --no-cache-dir -r requirements.txt
+RUN apt-get update -qq && apt-get install -y -qq nodejs npm && \
+    npm ci && pip install --no-cache-dir -r requirements.txt
 COPY . .
 RUN npm run build
 ENV PORT=3000

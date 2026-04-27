@@ -114,12 +114,15 @@ def open_github_pr(
         return None
 
     sha = base_resp.json()["object"]["sha"]
-    requests.post(
+    branch_resp = requests.post(
         f"https://api.github.com/repos/{repo}/git/refs",
         headers=headers,
         json={"ref": f"refs/heads/{branch}", "sha": sha},
         timeout=30,
     )
+    if branch_resp.status_code not in (200, 201):
+        print(f"Branch creation failed: {branch_resp.status_code} {branch_resp.text}")
+        return None
 
     # Commit patch (simplified — real impl would use Git tree API)
     # ...
@@ -139,7 +142,8 @@ def open_github_pr(
 
 def process_alert(alert: dict):
     """Process a single alert through the autofix pipeline."""
-    alert_id = alert.get("id", str(int(time.time())))
+    alert_id = alert.get("id") or str(int(time.time()))
+    alert["id"] = alert_id
     existing = load_alert(alert_id)
     if existing.get("status") in ("resolved", "claimed"):
         return
@@ -156,7 +160,8 @@ def process_alert(alert: dict):
     # pr_url = open_github_pr(...)
     # alert["pr_url"] = pr_url
 
-    if "resolved" in diagnosis.get("diagnosis", "").lower():
+    diag_lower = diagnosis.get("diagnosis", "").lower()
+    if diag_lower.startswith("resolved") or " status: resolved" in diag_lower:
         alert["status"] = "resolved"
 
     save_alert(alert)
@@ -174,26 +179,34 @@ def main():
         print("⚠️  OPENROUTER_API_KEY not set — diagnosis will be skipped")
 
     while True:
-        # Fetch from Sentry
-        issues = fetch_sentry_issues()
-        for issue in issues:
-            alert = {
-                "id": issue.get("id"),
-                "source": "sentry",
-                "project": issue.get("project", {}).get("slug"),
-                "severity": "high" if issue.get("isUnhandled") else "medium",
-                "title": issue.get("title"),
-                "message": issue.get("culprit", ""),
-                "status": "open",
-                "created_at": datetime.now(timezone.utc).isoformat(),
-            }
-            process_alert(alert)
+        try:
+            # Fetch from Sentry
+            issues = fetch_sentry_issues()
+            for issue in issues:
+                alert = {
+                    "id": issue.get("id"),
+                    "source": "sentry",
+                    "project": issue.get("project", {}).get("slug")
+                    if isinstance(issue.get("project"), dict)
+                    else None,
+                    "severity": "high" if issue.get("isUnhandled") else "medium",
+                    "title": issue.get("title"),
+                    "message": issue.get("culprit", ""),
+                    "status": "open",
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                }
+                process_alert(alert)
 
-        # Also process any manually dropped JSON files
-        for f in ALERTS_DIR.glob("*.json"):
-            data = json.loads(f.read_text())
-            if data.get("status") == "open":
-                process_alert(data)
+            # Also process any manually dropped JSON files
+            for f in ALERTS_DIR.glob("*.json"):
+                try:
+                    data = json.loads(f.read_text())
+                    if data.get("status") == "open":
+                        process_alert(data)
+                except json.JSONDecodeError as e:
+                    print(f"Skipping malformed alert file {f.name}: {e}")
+        except Exception as e:
+            print(f"Error in main loop: {e}")
 
         time.sleep(POLL_INTERVAL)
 

@@ -10,13 +10,13 @@ CHROMA_URL="http://localhost:8001"
 WIKI_DIR="/data/powerhouse/wiki"
 
 # Check ChromaDB is running
-if ! curl -sf "$CHROMA_URL/api/v1/heartbeat" > /dev/null 2>&1; then
+if ! curl -sf "$CHROMA_URL/api/v2/heartbeat" > /dev/null 2>&1; then
     echo "❌ ChromaDB not running at $CHROMA_URL"
     echo "   Start with: ./start-services.sh"
     exit 1
 fi
 
-# Python index script
+# Python index script (uses ChromaDB v1 API — update to v2 if running latest ChromaDB)
 python3 << 'PYEOF'
 import os, glob, json, requests
 from pathlib import Path

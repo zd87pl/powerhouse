@@ -20,7 +20,7 @@ echo "⏳ Waiting for services to be healthy..."
 sleep 5
 
 # ─── Health checks ──────────────────────────────────────────────────────────
-if curl -sf http://localhost:8001/api/v1/heartbeat > /dev/null 2>&1; then
+if curl -sf http://localhost:8001/api/v2/heartbeat > /dev/null 2>&1; then
     echo "✅ ChromaDB: http://localhost:8001"
 else
     echo "⚠️  ChromaDB: not responding yet (may need more time)"

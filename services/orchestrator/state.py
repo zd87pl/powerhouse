@@ -66,9 +66,20 @@ class SwarmRun:
             raise FileNotFoundError(task_id)
         data = json.loads(path.read_text(encoding="utf-8"))
         run = cls(data["task_id"], data["spec"], data["project"])
-        for k, v in data.items():
-            if hasattr(run, k):
-                setattr(run, k, v)
+        # Only restore expected data attributes, never methods or internal attrs
+        safe_keys = {
+            "status",
+            "architect_output",
+            "coder_output",
+            "review_output",
+            "review_passed",
+            "iteration",
+            "max_iterations",
+            "logs",
+        }
+        for k in safe_keys:
+            if k in data:
+                setattr(run, k, data[k])
         return run
 
     @classmethod
