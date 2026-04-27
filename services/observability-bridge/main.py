@@ -26,11 +26,12 @@ def save_alert(alert: dict) -> Path:
 async def sentry_webhook(request: Request):
     """Receive Sentry webhook events."""
     payload = await request.json()
+    alert_id = payload.get("id") or f"sentry-{int(datetime.now().timestamp())}"
     alert = {
-        "id": payload.get("id"),
+        "id": alert_id,
         "source": "sentry",
         "project": payload.get("project", "unknown"),
-        "severity": payload.get("level", "error"),
+        "severity": payload.get("level", "error") or "error",
         "title": payload.get("title", "Unknown error"),
         "message": payload.get("message", ""),
         "error_type": payload.get("type"),
@@ -50,11 +51,12 @@ async def sentry_webhook(request: Request):
 async def custom_alert(request: Request):
     """Receive custom alerts from any source."""
     payload = await request.json()
+    alert_id = payload.get("id") or f"custom-{int(datetime.now().timestamp())}"
     alert = {
-        "id": payload.get("id", f"custom-{int(datetime.now().timestamp())}"),
+        "id": alert_id,
         "source": "custom",
         "project": payload.get("project", "unknown"),
-        "severity": payload.get("severity", "medium"),
+        "severity": payload.get("severity", "medium") or "medium",
         "title": payload.get("title", "Custom alert"),
         "message": payload.get("message", ""),
         "error_type": None,
@@ -75,9 +77,12 @@ def list_alerts(status: str | None = None):
     """List all alerts, optionally filtered by status."""
     alerts = []
     for f in ALERTS_DIR.glob("*.json"):
-        data = json.loads(f.read_text())
-        if status is None or data.get("status") == status:
-            alerts.append(data)
+        try:
+            data = json.loads(f.read_text())
+            if status is None or data.get("status") == status:
+                alerts.append(data)
+        except json.JSONDecodeError:
+            continue  # skip malformed files
     return {"alerts": alerts, "count": len(alerts)}
 
 
