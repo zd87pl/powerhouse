@@ -8,6 +8,7 @@ Powerhouse leverages the [Hermes agent framework](https://github.com/zd87pl/herm
 | `project-scaffold` | Scaffold new projects | "scaffold project" |
 | `flyio-setup` | Fly.io app management | "deploy to fly" |
 | `vercel-setup` | Frontend deployment | "deploy to vercel" |
+| `railway-setup` | Railway deployment | "deploy to railway" |
 | `setup-supabase-cli` | Database branching | "supabase project" |
 | `eval-guardrails` | Phoenix + Promptfoo | "eval guardrails" |
 | `autofix-daemon` | Self-healing alerts | "autofix setup" |

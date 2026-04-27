@@ -44,8 +44,9 @@
 - **Autonomy:** ❌ No AI features
 - **Monitoring:** ✅ Infrastructure only (CPU, memory)
 - **Deployment:** Docker-based, easy scaling
-- **Strengths:** Best infra deployment experience
+- **Strengths:** Best managed deployment experience, auto-PR previews, managed Postgres/Redis
 - **Weaknesses:** No AI, no code generation, no monitoring
+- **Powerhouse Integration:** First-class deployment target — `powerhouse scaffold my-app --deploy railway`
 
 ---
 

@@ -66,6 +66,17 @@ if ! command -v gh &> /dev/null; then
 fi
 echo "✅ GitHub CLI: $(which gh)"
 
+# ─── Railway ────────────────────────────────────────────────────────────────
+if ! command -v railway &> /dev/null; then
+    echo "Installing Railway CLI..."
+    curl -fsSL https://railway.app/install.sh | sh
+    # Binary installs to ~/.railway/bin/railway — symlink to persistent bin
+    if [ -f "$HOME/.railway/bin/railway" ]; then
+        ln -sf "$HOME/.railway/bin/railway" "$BIN_DIR/railway"
+    fi
+fi
+echo "✅ Railway: $(which railway 2>/dev/null || echo "$BIN_DIR/railway")"
+
 # ─── Git Identity ───────────────────────────────────────────────────────────
 if [ -z "$(git config --global user.email 2>/dev/null || true)" ]; then
     echo "⚠️  Git identity not set. Run:"
@@ -78,7 +89,7 @@ echo ""
 echo "🎉 Bootstrap complete!"
 echo ""
 echo "Available tools:"
-for cmd in fly vercel supabase wrangler gh; do
+for cmd in fly vercel supabase wrangler gh railway; do
     if command -v "$cmd" &> /dev/null; then
         echo "  ✅ $cmd"
     else
@@ -88,5 +99,5 @@ done
 echo ""
 echo "Next steps:"
 echo "  1. Source your env: source /data/powerhouse/hermes/.envrc"
-echo "  2. Authenticate: fly auth token, vercel login, supabase login, gh auth login"
+echo "  2. Authenticate: fly auth token, vercel login, supabase login, gh auth login, railway login"
 echo "  3. Start services: ./infra/scripts/start-services.sh"

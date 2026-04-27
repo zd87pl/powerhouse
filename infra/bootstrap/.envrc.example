@@ -13,6 +13,8 @@ export RUNPOD_API_TOKEN=""
 export VERCEL_TOKEN=""
 export CLOUDFLARE_API_TOKEN=""
 
+export RAILWAY_TOKEN=***              # Railway CLI auth + deployments
+
 # ─── Database ───────────────────────────────────────────────────────────────
 export SUPABASE_ACCESS_TOKEN=""
 export NEON_API_KEY=""               # Alternative to Supabase

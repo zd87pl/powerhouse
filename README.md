@@ -152,7 +152,7 @@ source infra/bootstrap/.envrc
 
 ```bash
 ./infra/bootstrap/bootstrap-clis.sh
-# Installs: fly, vercel, supabase, sentry-cli, wrangler, gh
+# Installs: fly, vercel, railway, supabase, sentry-cli, wrangler, gh
 ```
 
 ### 4. Authenticate
@@ -160,6 +160,7 @@ source infra/bootstrap/.envrc
 ```bash
 fly auth token
 vercel login
+railway login
 supabase login
 git config --global user.email "you@example.com"
 git config --global user.name "Your Name"
@@ -192,6 +193,9 @@ powerhouse scaffold curvy-store --stack nextjs --deploy vercel
 
 # Scaffold a FastAPI backend
 powerhouse scaffold api-service --stack fastapi --deploy flyio
+
+# Scaffold a full-stack app on Railway
+powerhouse scaffold my-app --stack fullstack --deploy railway
 
 # What happens:
 # 1. GitHub repo created
@@ -281,12 +285,12 @@ All of this is **automatically maintained**:
 ┌──────────────────────────────────────────────────────────────────┐
 │                         POWERHOUSE                                │
 ├────────────┬──────────────┬─────────────┬───────────────────────┤
-│ 🧠 RAG     │ 🤖 Swarms    │ 🚀 Deploy   │ 📡 Observe            │
-│  Wiki      │  Architect   │  Fly.io     │  Sentry               │
-│  ChromaDB  │  Coder       │  Vercel     │  Phoenix              │
-│  arXiv     │  Reviewer    │  RunPod     │  Prometheus           │
-│  Blogs     │  DevOps      │  Supabase   │  Autofix              │
-│            │  Tester      │  Cloudflare │                       │
+| 🧠 RAG     | 🤖 Swarms    | 🚀 Deploy   | 📡 Observe            |
+|  Wiki      |  Architect   |  Fly.io     |  Sentry               |
+|  ChromaDB  |  Coder       |  Vercel     |  Phoenix              |
+|  arXiv     |  Reviewer    |  Railway    |  Prometheus           |
+|  Blogs     |  DevOps      |  RunPod     |  Autofix              |
+|            |  Tester      |  Supabase   |                       |
 └────────────┴──────────────┴─────────────┴───────────────────────┘
                          │
               ┌──────────▼──────────┐
