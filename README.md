@@ -303,13 +303,54 @@ All of this is **automatically maintained**:
 
 ---
 
+## 🎯 Declarative Intent Engine *(Phase 3)*
+
+Declare what your project needs in `.powerhouse.yml`. The intent engine discovers it and reconciles the real world to match.
+
+```yaml
+# .powerhouse.yml
+project: my-saas
+stack: nextjs
+deploy:
+  provider: vercel
+  region: iad1
+monitoring:
+  sentry: true
+  phoenix: true
+memory:
+  chromadb: true
+```
+
+```python
+from services.intent_engine import IntentEngine
+
+engine = IntentEngine(root="~/projects")
+records = engine.reconcile_all()
+
+# Each record shows what happened:
+# github_repo → CREATING, deploy_vercel → SKIPPED, sentry_project → EXISTS...
+for project, record in records.items():
+    print(f"{project}: {record.summary}")
+```
+
+**Pluggable resolvers** — each infrastructure provider is a resolver class:
+- `GitHubResolver` — repos, branch protection, secrets
+- `VercelResolver` / `FlyioResolver` — deployments
+- `SentryResolver` — error monitoring
+- `ChromaDBResolver` — vector memory
+- `CIPipelineResolver` — GitHub Actions CI
+
+Add your own: `class CloudflareResolver(Resolver): resource_key = "deploy_cloudflare"`
+
+---
+
 ## 📋 Roadmap
 
 | Phase | Focus | Timeline |
 |-------|-------|----------|
 | **Foundation** | Vector DB, DevContainers, model router | ✅ Ready |
-| **Autonomy** | Multi-agent swarms, autofix, DB branching | 🚧 Active |
-| **Scale** | Temporal workflows, fine-tuned models, KB monitor | 📅 Planned |
+| **Autonomy** | Multi-agent swarms, autofix, DB branching | ✅ Ready |
+| **Scale** | Declarative intent engine, n8n workflows, KB monitor | ✅ Ready |
 | **SaaS** | Multi-tenant platform, billing, landing page | 📅 14 weeks |
 
 [Full roadmap →](docs/roadmap.md)

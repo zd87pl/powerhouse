@@ -11,40 +11,46 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
       - name: Install lint tools
-        run: |
-          pip install ruff mypy types-requests
-
+        run: pip install ruff mypy types-requests types-PyYAML
       - name: Lint Python code
         run: |
-          ruff check services/
-          ruff format --check services/
-
+          ruff check services/ tests/
+          ruff format --check services/ tests/
       - name: Type check
         run: |
           mypy services/autofix-daemon/main.py --ignore-missing-imports
           mypy services/observability-bridge/main.py --ignore-missing-imports
           mypy services/orchestrator/state.py --ignore-missing-imports
-
+          mypy services/intent_engine/ --ignore-missing-imports
       - name: Validate shell scripts
         run: |
           sudo apt-get install -y shellcheck
           shellcheck infra/bootstrap/bootstrap-clis.sh || true
           shellcheck infra/scripts/*.sh || true
-
       - name: Check for secrets
         run: |
           ! grep -r "sk-" services/ infra/ || true
           ! grep -r "ghp_" services/ infra/ || true
           ! grep -r "AKIA" services/ infra/ || true
-
       - name: Check no .env committed
         run: |
           test ! -f .env
           test ! -f infra/bootstrap/.envrc
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install pytest pyyaml
+      - name: Run tests
+        run: python3 -m pytest tests/ -v

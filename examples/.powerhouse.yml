@@ -1,0 +1,30 @@
+# Example: .powerhouse.yml
+# Declare what your project needs. The intent engine reconciles it.
+# Place this in any project root and run: powerhouse reconcile
+
+project: my-app
+description: A full-stack Next.js app with monitoring and vector memory
+stack: nextjs
+
+deploy:
+  provider: vercel
+  region: iad1
+  env:
+    NODE_ENV: production
+  domain: my-app.vercel.app
+
+monitoring:
+  sentry: true
+  phoenix: true
+  prometheus: true
+
+memory:
+  chromadb: true
+  wiki: true
+
+ci:
+  runner: github_actions
+  lint: true
+  typecheck: true
+  test: true
+  secrets_scan: true
