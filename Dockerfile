@@ -10,5 +10,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Run the API
+ENV PYTHONPATH=/app
 EXPOSE 8080
 CMD ["python3", "-m", "uvicorn", "services.instill_api.main:app", "--host", "0.0.0.0", "--port", "8080"]

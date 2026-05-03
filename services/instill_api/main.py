@@ -334,10 +334,16 @@ async def delete_api_key(
 def _run_reconciliation(intent_yaml: str, dry_run: bool = False):
     """Run the intent engine on a .powerhouse.yml string."""
     import sys, os
-    # Use the app's base directory (works both locally and on Fly)
+
+    # Determine base dir from this file's location
+    # __file__ = /app/services/instill_api/main.py -> base = /app
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     if base_dir not in sys.path:
         sys.path.insert(0, base_dir)
+
+    # Also try the common Fly path
+    if os.path.exists("/app") and "/app" not in sys.path:
+        sys.path.insert(0, "/app")
 
     from services.intent_engine.schema import IntentFile
     from services.intent_engine.reconciler import reconcile, reconcile_summary
