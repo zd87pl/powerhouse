@@ -46,24 +46,59 @@ export default function HomePage() {
       <section id="demo" className="py-24 px-6 max-w-6xl mx-auto">
         <div className="text-center mb-16">
           <h2 className="text-3xl sm:text-4xl font-bold mb-4">
-            One file. <span className="text-accent">Five minutes.</span>{" "}
-            Live business.
+            Just describe it.{" "}
+            <span className="text-accent">We handle the rest.</span>
           </h2>
           <p className="text-muted text-lg max-w-2xl mx-auto">
-            This is the exact file that built Bez Spinki — a real plus-size
-            fashion store for the Polish market. Products, payments,
-            inventory sync, size guides. All from this.
+            No YAML required. Just tell Powerhouse what you want to
+            build — it extracts the intent, generates the config,
+            and builds everything while you watch.
           </p>
         </div>
 
-        <div className="bg-surface border border-border rounded-2xl p-6 sm:p-8 font-mono text-sm sm:text-base overflow-x-auto mb-8">
-          <div className="text-zinc-600 mb-3 select-none text-xs uppercase tracking-wider">
-            .powerhouse.yml
+        {/* Chat Demo — knowledge compression in action */}
+        <div className="max-w-2xl mx-auto mb-8">
+          {/* User message */}
+          <div className="flex justify-end mb-4">
+            <div className="bg-accent-glow text-white rounded-2xl rounded-br-md px-5 py-3 max-w-[85%] sm:max-w-[75%]">
+              <p className="text-sm sm:text-base">
+                Build me a plus-size fashion store for Poland. I need BLIK
+                payments, sizes XL to 6XL, free shipping over 200 zł, and
+                Shopify backend.
+              </p>
+            </div>
           </div>
-          <pre className="text-text leading-relaxed">
-            <code>{`# Describe your business. That's it.
-project: bez-spinki
-description: "Polish plus-size fashion store"
+
+          {/* Powerhouse thinking */}
+          <div className="flex gap-3 mb-3">
+            <div className="w-8 h-8 rounded-full bg-accent-glow/20 border border-accent-glow/30 flex items-center justify-center text-xs shrink-0 mt-1">
+              ⚡
+            </div>
+            <div className="bg-surface border border-border rounded-2xl rounded-bl-md px-5 py-3 max-w-[85%] sm:max-w-[75%]">
+              <p className="text-xs text-muted mb-2 font-mono">
+                Analyzing intent...
+              </p>
+              <p className="text-sm text-text leading-relaxed">
+                Got it. I&apos;ll set up{" "}
+                <span className="text-accent">bez-spinki</span> — a
+                Next.js storefront with Shopify checkout, BLIK
+                integration, size guide (XL–6XL), and free shipping
+                threshold at 200 zł. Inventory sync from your suppliers.
+                Margin monitoring and A/B testing agents included.
+              </p>
+            </div>
+          </div>
+
+          {/* Generated YAML — expandable */}
+          <details className="group mb-3 ml-11">
+            <summary className="text-xs text-muted hover:text-accent cursor-pointer transition-colors inline-flex items-center gap-1 mb-2">
+              <svg className="w-3 h-3 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+              See the generated config
+            </summary>
+            <div className="bg-bg border border-border/50 rounded-xl p-4 font-mono text-xs text-muted leading-relaxed overflow-x-auto">
+              <pre>{`project: bez-spinki
 stack: nextjs
 market: PL
 
@@ -71,21 +106,81 @@ features:
   - shopify-checkout
   - blik-payments
   - size-guide-xl-6xl
-  - inventory-sync
-  - darmowa-dostawa
+  - free-shipping-200pln
 
 business_agents:
-  merchandising: true   # Auto-monitors margins
-  growth: true          # A/B tests, traffic alerts
+  merchandising: true
+  growth: true
 
 monitoring:
   sentry: true
-  phoenix: true
-  autofix: true         # Sleep through bugs`}</code>
-          </pre>
-          <div className="mt-4 flex items-center gap-2 text-xs text-zinc-600">
-            <span className="w-2 h-2 rounded-full bg-success" />
-            That&apos;s the entire spec. Powerhouse builds the rest.
+  autofix: true`}</pre>
+            </div>
+          </details>
+
+          {/* Build started */}
+          <div className="flex gap-3 ml-11">
+            <div className="bg-surface border border-border rounded-2xl rounded-bl-md px-5 py-3 max-w-[85%] sm:max-w-[75%]">
+              <div className="flex items-center gap-3 mb-2">
+                <span className="flex gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse [animation-delay:0.2s]" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse [animation-delay:0.4s]" />
+                </span>
+                <span className="text-xs text-muted font-mono">
+                  Building...
+                </span>
+              </div>
+              <div className="space-y-1">
+                {[
+                  { label: "GitHub repo", done: true },
+                  { label: "Next.js scaffold", done: true },
+                  { label: "Shopify integration", done: true },
+                  { label: "Vercel deploy", done: false },
+                ].map((step) => (
+                  <div
+                    key={step.label}
+                    className="flex items-center gap-2 text-xs"
+                  >
+                    <span
+                      className={
+                        step.done
+                          ? "text-success"
+                          : "text-muted animate-pulse"
+                      }
+                    >
+                      {step.done ? "✓" : "○"}
+                    </span>
+                    <span
+                      className={
+                        step.done ? "text-muted" : "text-text"
+                      }
+                    >
+                      {step.label}
+                    </span>
+                    {step.done && (
+                      <span className="text-zinc-700 font-mono">
+                        1.2s
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Live URL */}
+          <div className="flex gap-3 mt-4 ml-11">
+            <div className="bg-surface border border-success/30 rounded-2xl rounded-bl-md px-5 py-3">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-success" />
+                <span className="text-xs text-muted">Live at</span>
+                <span className="text-sm text-accent font-mono">
+                  bez-spinki.vercel.app
+                </span>
+                <span className="text-xs text-zinc-700">4m 32s</span>
+              </div>
+            </div>
           </div>
         </div>
 
