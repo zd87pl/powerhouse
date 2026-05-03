@@ -219,6 +219,177 @@ monitoring:
         </div>
       </section>
 
+      {/* ── OPENJARVIS HYBRID ── */}
+      <section className="py-24 px-6 max-w-6xl mx-auto">
+        <div className="text-center mb-16">
+          <h2 className="text-3xl sm:text-4xl font-bold mb-4">
+            Runs on your machine.
+            <br />
+            <span className="text-accent">Escalates to the cloud</span>{" "}
+            when it matters.
+          </h2>
+          <p className="text-muted text-lg max-w-2xl mx-auto">
+            Powered by{" "}
+            <span className="text-text font-semibold">OpenJarvis</span>{" "}
+            — Stanford&apos;s local-first AI framework. Simple tasks run
+            instantly on your device. Complex builds scale to our agent
+            swarm. You never choose — the system routes intelligently.
+          </p>
+        </div>
+
+        {/* Split panel */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-12">
+          {/* Local side */}
+          <div className="bg-surface border border-border rounded-2xl p-6 sm:p-8 relative overflow-hidden">
+            <div className="absolute top-0 right-0 px-3 py-1 bg-accent-glow/10 border-b border-l border-accent-glow/20 rounded-bl-lg text-xs text-accent font-mono">
+              YOUR MACHINE
+            </div>
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-10 h-10 rounded-xl bg-success/10 border border-success/20 flex items-center justify-center text-lg">
+                🖥️
+              </div>
+              <div>
+                <h3 className="font-semibold text-text">
+                  Local Agent
+                </h3>
+                <p className="text-xs text-muted">
+                  OpenJarvis · Qwen 4B · Instant
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              {[
+                {
+                  q: "What's my margin on Sukienki XL?",
+                  t: "0.3s",
+                  label: "Margin check",
+                },
+                {
+                  q: "Summarize today's orders",
+                  t: "0.8s",
+                  label: "Order summary",
+                },
+                {
+                  q: "Is the BLIK payment gateway up?",
+                  t: "0.2s",
+                  label: "Health check",
+                },
+              ].map((item) => (
+                <div
+                  key={item.label}
+                  className="bg-bg rounded-xl p-3 border border-border/50"
+                >
+                  <div className="flex items-start justify-between gap-2 mb-1">
+                    <span className="text-xs text-muted font-mono">
+                      {item.label}
+                    </span>
+                    <span className="text-xs text-success font-mono shrink-0">
+                      {item.t}
+                    </span>
+                  </div>
+                  <p className="text-sm text-text">{item.q}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-4 flex items-center gap-2 text-xs text-muted">
+              <span className="w-1.5 h-1.5 rounded-full bg-success" />
+              Private · Offline capable · $0 per query
+            </div>
+          </div>
+
+          {/* Cloud side */}
+          <div className="bg-surface border border-border rounded-2xl p-6 sm:p-8 relative overflow-hidden">
+            <div className="absolute top-0 right-0 px-3 py-1 bg-accent-glow/10 border-b border-l border-accent-glow/20 rounded-bl-lg text-xs text-accent font-mono">
+              POWERHOUSE CLOUD
+            </div>
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-10 h-10 rounded-xl bg-accent-glow/10 border border-accent-glow/20 flex items-center justify-center text-lg">
+                ☁️
+              </div>
+              <div>
+                <h3 className="font-semibold text-text">
+                  Agent Swarm
+                </h3>
+                <p className="text-xs text-muted">
+                  Claude Opus · 5 agents · Full power
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              {[
+                {
+                  q: "Build me a complete store with Shopify + BLIK",
+                  t: "4m 32s",
+                  label: "Full build",
+                },
+                {
+                  q: "Analyze traffic anomaly on /sukienki",
+                  t: "12s",
+                  label: "Growth analysis",
+                },
+                {
+                  q: "Deploy hotfix for checkout crash",
+                  t: "45s",
+                  label: "Emergency fix",
+                },
+              ].map((item) => (
+                <div
+                  key={item.label}
+                  className="bg-bg rounded-xl p-3 border border-border/50"
+                >
+                  <div className="flex items-start justify-between gap-2 mb-1">
+                    <span className="text-xs text-muted font-mono">
+                      {item.label}
+                    </span>
+                    <span className="text-xs text-accent font-mono shrink-0">
+                      {item.t}
+                    </span>
+                  </div>
+                  <p className="text-sm text-text">{item.q}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-4 flex items-center gap-2 text-xs text-muted">
+              <span className="w-1.5 h-1.5 rounded-full bg-accent" />
+              Full agent swarm · Deliberation council · Persistent memory
+            </div>
+          </div>
+        </div>
+
+        {/* Flow indicator */}
+        <div className="flex items-center justify-center gap-4 text-sm text-muted">
+          <span>Simple queries</span>
+          <span className="flex items-center gap-1">
+            <span className="w-16 h-0.5 bg-success/30 rounded-full" />
+            <span className="text-success text-xs">local</span>
+          </span>
+          <span className="text-zinc-600">·</span>
+          <span className="flex items-center gap-1">
+            <span className="text-accent text-xs">cloud</span>
+            <span className="w-16 h-0.5 bg-accent/30 rounded-full" />
+          </span>
+          <span>Complex builds</span>
+        </div>
+
+        <div className="text-center mt-8">
+          <p className="text-xs text-zinc-600 max-w-lg mx-auto">
+            Built on{" "}
+            <a
+              href="https://github.com/open-jarvis/OpenJarvis"
+              className="text-accent hover:underline"
+            >
+              OpenJarvis
+            </a>
+            {" "}— Stanford Hazy Research. Local-first, cloud when needed.
+            Same skills catalog. Same agent standard.
+          </p>
+        </div>
+      </section>
+
       {/* ── HOW IT WORKS ── */}
       <section className="py-24 px-6 bg-surface/30">
         <div className="max-w-6xl mx-auto">
