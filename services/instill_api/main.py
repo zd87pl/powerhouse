@@ -2,10 +2,12 @@
 
 import os
 import traceback
+import httpx
+import jwt
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from fastapi import FastAPI, Depends, HTTPException, Query
+from fastapi import FastAPI, Depends, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
@@ -46,16 +48,85 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── Clerk JWT Validation ──
 
-# ── Auth helper (stub — Clerk middleware replaces this) ──
+CLERK_JWKS_URL = "https://api.clerk.com/v1/jwks"
+_jwks_client: Optional[jwt.PyJWKClient] = None
+
+
+def _get_jwks_client() -> jwt.PyJWKClient:
+    """Lazy-init singleton JWKS client."""
+    global _jwks_client
+    if _jwks_client is None:
+        _jwks_client = jwt.PyJWKClient(CLERK_JWKS_URL)
+    return _jwks_client
+
+
+async def get_clerk_user_id(request: Request) -> Optional[str]:
+    """Extract Clerk user ID from JWT in Authorization header.
+    
+    Returns None if no auth header present (dev fallback).
+    Raises HTTPException on invalid/expired tokens.
+    """
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return None
+
+    token = auth[7:]
+    clerk_secret = os.getenv("CLERK_SECRET_KEY")
+    if not clerk_secret:
+        return None  # Dev mode — no Clerk configured
+
+    try:
+        client = _get_jwks_client()
+        signing_key = client.get_signing_key_from_jwt(token)
+        payload = jwt.decode(
+            token,
+            signing_key.key,
+            algorithms=["RS256"],
+            options={"verify_exp": True},
+        )
+        # Verify issuer
+        iss = payload.get("iss", "")
+        if not iss.startswith("https://clerk."):
+            raise HTTPException(status_code=401, detail="Invalid token issuer")
+        return payload.get("sub")  # Clerk user ID
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired")
+    except jwt.InvalidTokenError as e:
+        raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
+
+
+# ── Auth dependency ──
+
 
 async def get_current_tenant(
+    request: Request,
     session: Session = Depends(get_session),
 ) -> Tenant:
-    """Stub auth: returns first tenant. Replace with Clerk JWT validation."""
+    """Get tenant from Clerk JWT, or fall back to dev tenant."""
+    clerk_user_id = await get_clerk_user_id(request)
+
+    if clerk_user_id:
+        # Look up existing tenant
+        tenant = session.query(Tenant).filter(Tenant.clerk_id == clerk_user_id).first()
+        if tenant:
+            return tenant
+        # Auto-create on first sign-in
+        tenant = Tenant(
+            id=gen_id(),
+            clerk_id=clerk_user_id,
+            name=f"User {clerk_user_id[:8]}",
+            email=f"{clerk_user_id}@clerk.user",
+        )
+        session.add(tenant)
+        session.commit()
+        session.refresh(tenant)
+        return tenant
+
+    # No auth → dev fallback
     tenant = session.query(Tenant).first()
     if tenant is None:
-        # Auto-create dev tenant
         tenant = Tenant(
             id=gen_id(),
             name="Dev Tenant",
@@ -187,7 +258,6 @@ async def reconcile_project(
     session.add(run)
     session.commit()
 
-    # Trigger actual reconciliation
     try:
         results, summary = _run_reconciliation(project.intent_yaml, data.dry_run)
         run.status = "synced" if summary["healthy"] else "drifted"
@@ -253,7 +323,6 @@ async def trigger_agent(
     session.add(run)
     session.commit()
 
-    # Trigger agent (stub — replace with actual agent dispatch)
     try:
         output = _run_agent(data.agent_type, data.input_spec, project.intent_yaml)
         run.status = "completed"
@@ -341,7 +410,6 @@ def _run_reconciliation(intent_yaml: str, dry_run: bool = False):
     data = yaml.safe_load(intent_yaml) if intent_yaml else {}
     project_name = data.get("project", "unknown")
 
-    # Determine which resources the intent requires
     resources = ["github_repo"]
 
     deploy = data.get("deploy", {}) or {}
@@ -365,7 +433,7 @@ def _run_reconciliation(intent_yaml: str, dry_run: bool = False):
 
     # Try to use the real intent engine if available
     try:
-        import sys, os
+        import sys
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         if base_dir not in sys.path:
             sys.path.insert(0, base_dir)
@@ -390,7 +458,7 @@ def _run_reconciliation(intent_yaml: str, dry_run: bool = False):
         ]
         return results_dict, summary
     except Exception:
-        pass  # Fall through to simulated reconciliation
+        pass
 
     # Simulated reconciliation (no resolvers registered yet)
     results_dict = [
