@@ -42,3 +42,4 @@ Thumbs.db
 # ─── Project Artifacts ──────────────────────────────────
 projects/*/
 !projects/.gitkeep
+node_modules/\n.next/\n.env.local\ninstill.db
