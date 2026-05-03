@@ -52,7 +52,7 @@ class ReconciliationRunResponse(BaseModel):
     project_id: str
     status: str
     dry_run: bool
-    drifts_found: List[Any]
+    drifts_found: Any  # Dict or List — varies between real engine and simulated
     drifts_resolved: List[Any]
     resources_checked: List[Any]
     log: str
