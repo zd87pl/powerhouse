@@ -198,14 +198,17 @@ async def reconcile_project(
         project.updated_at = datetime.now(timezone.utc)
     except Exception as e:
         run.status = "error"
-        run.error_message = str(e)
-        run.log = traceback.format_exc()
+        run.error_message = str(e)[:500]
+        run.log = traceback.format_exc()[:1000]
         project.status = "error"
         project.updated_at = datetime.now(timezone.utc)
 
     session.commit()
-    session.refresh(run)
-    return ReconciliationRunResponse.model_validate(run)
+    try:
+        session.refresh(run)
+        return ReconciliationRunResponse.model_validate(run)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Serialization error: {str(e)}")
 
 
 @app.get("/api/projects/{project_id}/reconciliations", response_model=List[ReconciliationRunResponse])
