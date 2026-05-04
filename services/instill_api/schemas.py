@@ -106,3 +106,19 @@ class HealthResponse(BaseModel):
     status: str = "ok"
     version: str = "0.1.0"
     database: str = "connected"
+
+
+# ── Intent Parser ──
+
+class ParseRequest(BaseModel):
+    description: str = Field(..., min_length=1, max_length=2000)
+
+
+class ParseResponse(BaseModel):
+    project: str
+    stack: str
+    market: str
+    features: List[str]
+    tools: List[str]
+    explanation: str
+    required_keys: List[str]

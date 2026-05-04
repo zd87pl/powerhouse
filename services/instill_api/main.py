@@ -26,6 +26,8 @@ from .schemas import (
     ApiKeyCreate,
     ApiKeyResponse,
     HealthResponse,
+    ParseRequest,
+    ParseResponse,
     ProjectCreate,
     ProjectListResponse,
     ProjectResponse,
@@ -143,6 +145,174 @@ async def get_current_tenant(
 @app.get("/api/health", response_model=HealthResponse)
 async def health():
     return HealthResponse()
+
+
+# ── Intent Parser ──
+
+@app.post("/parse", response_model=ParseResponse)
+async def parse_intent(data: ParseRequest):
+    """Parse a natural language business description into a structured spec."""
+    import json
+    import re
+
+    openrouter_key = os.getenv("OPENROUTER_API_KEY", "")
+    if not openrouter_key:
+        return _fallback_parse(data.description)
+
+    prompt = f"""You are a business specification parser. Given a natural language description, 
+extract the structured intent as JSON. Return ONLY valid JSON, no other text.
+
+Description: {data.description}
+
+Return JSON with these exact keys:
+{{
+  "project": "project_slug_here",
+  "stack": "nextjs" or "fastapi" or "remix" or "astro",
+  "market": "2-letter country code or global",
+  "features": ["list", "of", "features"],
+  "tools": ["list", "of", "required", "tools/services"],
+  "explanation": "2-3 sentence explanation of what was understood and what will be built",
+  "required_keys": ["GitHub", "Vercel", "OpenAI", "Stripe", ...]
+}}
+
+Rules:
+- features: include storefront type, payment methods, integrations, languages, size ranges, shipping rules
+- tools: include payment gateways (Stripe, BLIK, etc), hosting (Vercel, Fly.io), CMS, analytics
+- required_keys: list the API/services the user needs to provide keys for (always include "GitHub")
+- project slug: make it short, lowercase, hyphenated
+- explanation: mention key stack decisions and why"""
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {openrouter_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": "anthropic/claude-3.5-haiku",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.3,
+                    "max_tokens": 800,
+                },
+            )
+            resp.raise_for_status()
+            body = resp.json()
+            content = body["choices"][0]["message"]["content"]
+
+            # Extract JSON from the response (handle markdown code blocks)
+            json_match = re.search(r'\{[\s\S]*\}', content)
+            if json_match:
+                parsed = json.loads(json_match.group(0))
+                return ParseResponse(
+                    project=parsed.get("project", "my-project"),
+                    stack=parsed.get("stack", "nextjs"),
+                    market=parsed.get("market", "global"),
+                    features=parsed.get("features", []),
+                    tools=parsed.get("tools", []),
+                    explanation=parsed.get("explanation", ""),
+                    required_keys=parsed.get("required_keys", ["GitHub", "Vercel"]),
+                )
+            else:
+                return _fallback_parse(data.description)
+
+    except Exception:
+        return _fallback_parse(data.description)
+
+
+def _fallback_parse(description: str) -> ParseResponse:
+    """Rule-based fallback parser when LLM is unavailable."""
+    desc_lower = description.lower()
+
+    # Market detection
+    if any(w in desc_lower for w in ["poland", "polish", "pl", "polska", "zł", "blik"]):
+        market = "PL"
+    elif any(w in desc_lower for w in ["brazil", "brazilian", "br"]):
+        market = "BR"
+    elif any(w in desc_lower for w in ["germany", "german", "de"]):
+        market = "DE"
+    else:
+        market = "global"
+
+    # Stack detection
+    if any(w in desc_lower for w in ["wordpress", "wp"]):
+        stack = "wordpress"
+    elif any(w in desc_lower for w in ["remix", "shopify remix"]):
+        stack = "remix"
+    elif any(w in desc_lower for w in ["api", "backend", "fastapi"]):
+        stack = "fastapi"
+    else:
+        stack = "nextjs"
+
+    # Features
+    features = []
+    tools = []
+    required_keys = ["GitHub", "Vercel"]
+
+    if any(w in desc_lower for w in ["store", "shop", "ecommerce", "e-commerce", "fashion", "clothing"]):
+        features.append("ecommerce-storefront")
+        tools.append("Stripe")
+        required_keys.append("Stripe")
+        if "blik" in desc_lower or market == "PL":
+            features.append("blik-payments")
+            if "Stripe" not in tools:
+                tools.append("Stripe")
+
+    if any(w in desc_lower for w in ["plus-size", "plus size", "xl", "xxl"]):
+        features.append("size-guide-xl-6xl")
+
+    if any(w in desc_lower for w in ["free shipping", "darmowa dostawa", "free delivery"]):
+        features.append("free-shipping-threshold")
+
+    if any(w in desc_lower for w in ["blog", "content", "newsletter"]):
+        features.append("blog")
+
+    if any(w in desc_lower for w in ["saas", "dashboard", "subscription"]):
+        features.append("saas-dashboard")
+        required_keys.append("Stripe")
+
+    if any(w in desc_lower for w in ["marketplace", "two-sided", "buyers and sellers"]):
+        features.append("marketplace")
+
+    if any(w in desc_lower for w in ["shopify", "shopify backend"]):
+        features.append("shopify-backend")
+        tools.append("Shopify")
+        required_keys.append("Shopify")
+
+    if any(w in desc_lower for w in ["dropshipping", "banggood", "aliexpress", "supplier"]):
+        features.append("dropship-integration")
+
+    if any(w in desc_lower for w in ["ai", "ml", "machine learning"]):
+        tools.append("OpenAI")
+        required_keys.append("OpenAI")
+
+    # Generate project slug
+    words = re.findall(r'[a-z]+', desc_lower)
+    stop_words = {'a', 'an', 'the', 'i', 'me', 'my', 'we', 'our', 'you', 'your',
+                  'build', 'create', 'make', 'want', 'need', 'with', 'for', 'and',
+                  'or', 'but', 'in', 'on', 'at', 'to', 'of', 'is', 'it', 'that',
+                  'this', 'be', 'have', 'has', 'do', 'does', 'from', 'by', 'as'}
+    meaningful = [w for w in words if w not in stop_words and len(w) > 2][:3]
+    project = "-".join(meaningful) if meaningful else "my-project"
+
+    # Generate explanation
+    stack_name = {"nextjs": "Next.js", "fastapi": "FastAPI", "remix": "Remix", "wordpress": "WordPress", "astro": "Astro"}.get(stack, stack)
+    feature_desc = ", ".join(f.replace("-", " ") for f in features) if features else "a web application"
+    explanation = (
+        f"Got it. I'll set up {project} — a {stack_name} application with {feature_desc}. "
+        f"Targeting the {market} market. Monitoring and CI/CD included."
+    )
+
+    return ParseResponse(
+        project=project,
+        stack=stack,
+        market=market,
+        features=features,
+        tools=tools,
+        explanation=explanation,
+        required_keys=required_keys,
+    )
 
 
 # ── Projects ──
