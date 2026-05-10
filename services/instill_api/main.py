@@ -698,6 +698,7 @@ export function Hero({ title, subtitle, features }: { title: string; subtitle: s
 
 def _generate_page_tsx(title: str, subtitle: str, features: list) -> str:
     """Generate a page.tsx for any route."""
+    import json as _json
     return f"""import {{ Hero }} from "@/components/Hero";
 
 export default function HomePage() {{
@@ -705,7 +706,7 @@ export default function HomePage() {{
     <Hero
       title="{title}"
       subtitle="{subtitle}"
-      features={{{json.dumps(features)}}}
+      features={{{_json.dumps(features)}}}
     />
   );
 }}
