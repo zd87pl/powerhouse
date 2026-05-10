@@ -2,6 +2,9 @@
 
 import os
 import traceback
+import subprocess
+import tempfile
+import shutil
 import httpx
 import jwt
 from datetime import datetime, timezone
@@ -25,6 +28,8 @@ from .schemas import (
     AgentRunResponse,
     ApiKeyCreate,
     ApiKeyResponse,
+    BuildRequest,
+    BuildResponse,
     HealthResponse,
     ParseRequest,
     ParseResponse,
@@ -313,6 +318,313 @@ def _fallback_parse(description: str) -> ParseResponse:
         explanation=explanation,
         required_keys=required_keys,
     )
+
+
+# ── Project Builder ──
+
+# Minimal Next.js + Tailwind v4 template embedded in the API
+_NEXTJS_TEMPLATE = {
+    "package.json": """{
+  "name": "{{PROJECT}}",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "next": "^15.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.0.0",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.0.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0"
+  }
+}""",
+    "next.config.js": """const nextConfig = {
+  output: "export",
+  images: { unoptimized: true },
+};
+module.exports = nextConfig;
+""",
+    "postcss.config.mjs": """const config = {
+  plugins: {
+    "@tailwindcss/postcss": {},
+  },
+};
+export default config;
+""",
+    "tsconfig.json": """{
+  "compilerOptions": {
+    "target": "ES2017",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "react-jsx",
+    "incremental": true,
+    "plugins": [{"name": "next"}],
+    "paths": {"@/*": ["./src/*"]}
+  },
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  "exclude": ["node_modules"]
+}
+""",
+    ".gitignore": """node_modules/
+.next/
+out/
+dist/
+.env.local
+""",
+}
+
+
+def _render_template(template: str, **kwargs) -> str:
+    """Replace {{PLACEHOLDER}} with values."""
+    result = template
+    for key, value in kwargs.items():
+        result = result.replace(f"{{{{{key}}}}}", str(value))
+    return result
+
+
+@app.post("/build", response_model=BuildResponse)
+async def build_project(data: BuildRequest = None, raw_data: Request = None):
+    """Scaffold a real Next.js project and deploy to Vercel.
+
+    Accepts either JSON body (BuildRequest) or a parsed intent from /parse.
+    Returns the live Vercel URL once deployed.
+    """
+    import json as json_mod
+
+    # Handle both direct BuildRequest and raw JSON (from landing page)
+    if data is None and raw_data is not None:
+        body = await raw_data.json()
+        data = BuildRequest(**body)
+    elif data is None:
+        raise HTTPException(status_code=400, detail="Missing request body")
+
+    project_slug = data.project.strip().lower().replace(" ", "-")
+    features_str = ", ".join(data.features) if data.features else "a web application"
+    market = data.market or "global"
+
+    vercel_token = os.getenv("VERCEL_TOKEN", "")
+    if not vercel_token:
+        raise HTTPException(
+            status_code=503,
+            detail="VERCEL_TOKEN not configured. Cannot deploy.",
+        )
+
+    build_dir = tempfile.mkdtemp(prefix="powerhouse-build-")
+    project_dir = os.path.join(build_dir, project_slug)
+
+    try:
+        # 1. Create project directory
+        os.makedirs(os.path.join(project_dir, "src", "app"), exist_ok=True)
+
+        # 2. Write template files
+        for filename, content in _NEXTJS_TEMPLATE.items():
+            rendered = _render_template(content, PROJECT=project_slug)
+            filepath = os.path.join(project_dir, filename)
+            os.makedirs(os.path.dirname(filepath) or project_dir, exist_ok=True)
+            with open(filepath, "w") as f:
+                f.write(rendered)
+
+        # 3. Write globals.css with Powerhouse dark theme
+        css_content = _render_template("""@import "tailwindcss";
+@source "../";
+
+@theme {
+  --color-bg: #0a0a0f;
+  --color-surface: #13131a;
+  --color-border: #1e1e2e;
+  --color-accent: #a78bfa;
+  --color-accent-glow: #7c3aed;
+  --color-text: #e4e4e7;
+  --color-muted: #71717a;
+  --color-success: #34d399;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+""", PROJECT=project_slug)
+        os.makedirs(os.path.join(project_dir, "src", "app"), exist_ok=True)
+        with open(os.path.join(project_dir, "src", "app", "globals.css"), "w") as f:
+            f.write(css_content)
+
+        # 4. Write layout.tsx
+        layout_tsx = """import type { Metadata } from "next";
+import "./globals.css";
+
+export const metadata: Metadata = {
+  title: "{{TITLE}}",
+  description: "{{DESCRIPTION}}",
+};
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en" className="scroll-smooth">
+      <body className="bg-bg text-text antialiased min-h-screen">
+        {children}
+      </body>
+    </html>
+  );
+}
+""".replace("{{TITLE}}", project_slug.replace("-", " ").title()).replace(
+            "{{DESCRIPTION}}", f"A {features_str}. Built with Powerhouse."
+        )
+        with open(os.path.join(project_dir, "src", "app", "layout.tsx"), "w") as f:
+            f.write(layout_tsx)
+
+        # 5. Write page.tsx — landing page customized from intent
+        page_features_html = "\n".join(
+            f'              <li className="flex items-center gap-2"><span className="text-accent">▸</span> {f.replace("-", " ").title()}</li>'
+            for f in data.features[:8]
+        )
+        if not page_features_html:
+            page_features_html = '              <li className="flex items-center gap-2"><span className="text-accent">▸</span> Responsive web application</li>'
+
+        page_tsx = f"""export default function Home() {{
+  return (
+    <main className="min-h-screen flex flex-col items-center justify-center p-8">
+      <div className="max-w-2xl w-full space-y-8 text-center">
+        <div className="space-y-4">
+          <h1 className="text-5xl font-bold bg-gradient-to-r from-accent to-accent-glow bg-clip-text text-transparent">
+            {project_slug.replace("-", " ").title()}
+          </h1>
+          <p className="text-muted text-lg max-w-lg mx-auto">
+            {features_str}
+          </p>
+        </div>
+
+        <div className="bg-surface border border-border rounded-2xl p-8 text-left">
+          <h2 className="text-xl font-semibold text-text mb-4">✨ Features</h2>
+          <ul className="space-y-2 text-muted">
+{page_features_html}
+          </ul>
+        </div>
+
+        <div className="flex gap-3 justify-center">
+          <span className="px-3 py-1.5 bg-surface border border-border rounded-full text-sm text-muted">
+            🎯 {market.upper()}
+          </span>
+          <span className="px-3 py-1.5 bg-surface border border-border rounded-full text-sm text-muted">
+            ⚡ Next.js
+          </span>
+        </div>
+
+        <p className="text-sm text-muted">
+          Built with{" "}
+          <a href="https://powerhouse.dev" className="text-accent hover:underline">
+            Powerhouse
+          </a>
+        </p>
+      </div>
+    </main>
+  );
+}}
+"""
+        with open(os.path.join(project_dir, "src", "app", "page.tsx"), "w") as f:
+            f.write(page_tsx)
+
+        # 6. Install dependencies
+        npm_result = subprocess.run(
+            ["npm", "install"],
+            cwd=project_dir,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if npm_result.returncode != 0:
+            raise HTTPException(
+                status_code=500,
+                detail=f"npm install failed: {npm_result.stderr[-500:]}",
+            )
+
+        # 7. Build
+        build_result = subprocess.run(
+            ["npm", "run", "build"],
+            cwd=project_dir,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if build_result.returncode != 0:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Build failed: {build_result.stderr[-500:]}",
+            )
+
+        # 8. Deploy to Vercel
+        out_dir = os.path.join(project_dir, "out")
+        if not os.path.exists(out_dir):
+            raise HTTPException(status_code=500, detail="Build output 'out/' not found")
+
+        deploy_result = subprocess.run(
+            ["vercel", "deploy", out_dir, "--prod", "--yes",
+             "--token", vercel_token, "--scope", "zd87pl"],
+            cwd=project_dir,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if deploy_result.returncode != 0:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Vercel deploy failed: {deploy_result.stderr[-500:]}",
+            )
+
+        # Extract the deployment URL from stdout
+        deploy_url = ""
+        for line in deploy_result.stdout.split("\n"):
+            line = line.strip()
+            if line.startswith("https://") and "vercel.app" in line:
+                deploy_url = line
+                break
+        if not deploy_url:
+            # Try to find URL in combined output
+            import re as regex
+            url_match = regex.search(
+                r"https://[a-zA-Z0-9-]+\.vercel\.app",
+                deploy_result.stdout + deploy_result.stderr,
+            )
+            if url_match:
+                deploy_url = url_match.group(0)
+            else:
+                deploy_url = f"https://{project_slug}.vercel.app"
+
+        return BuildResponse(
+            project=project_slug,
+            deploy_url=deploy_url,
+            status="deployed",
+            message=f"Project {project_slug} deployed to {deploy_url}",
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        # Cleanup temp directory
+        try:
+            shutil.rmtree(build_dir)
+        except Exception:
+            pass
 
 
 # ── Projects ──

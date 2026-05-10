@@ -122,3 +122,20 @@ class ParseResponse(BaseModel):
     tools: List[str]
     explanation: str
     required_keys: List[str]
+
+
+# ── Project Builder ──
+
+class BuildRequest(BaseModel):
+    project: str = Field(..., min_length=1, max_length=64)
+    description: str = ""
+    stack: str = "nextjs"
+    features: List[str] = []
+    market: str = "global"
+
+
+class BuildResponse(BaseModel):
+    project: str
+    deploy_url: str
+    status: str  # "building" | "deployed" | "failed"
+    message: str
