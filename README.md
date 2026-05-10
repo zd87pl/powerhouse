@@ -2,10 +2,10 @@
 
 # ⚡ POWERHOUSE
 
-### **You describe the business. AI builds everything else.**
+### **Declare the business. Reconcile the infrastructure. Automate the fixes.**
 
 > *"Build me a plus-size fashion store for the Polish market."*
-> *5 minutes later → live store, real payments, inventory management, automated marketing.*
+> *Powerhouse turns that intent into projects, infrastructure checks, and agent workflows.*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://python.org)
@@ -18,15 +18,15 @@
 
 ## 🤯 What Is This?
 
-**Powerhouse is an AI engineering team in a box.** You give it a business idea. It:
+**Powerhouse is an early-stage autonomous engineering harness.** You give it a business idea or `.powerhouse.yml` intent file. The current codebase provides:
 
-1. **Scaffolds** the entire project — repo, CI/CD, database, monitoring
-2. **Builds** the thing — frontend, backend, payments, auth, everything
-3. **Deploys** it to production — live URL, real infrastructure
-4. **Monitors** it — catches errors before users do
-5. **Heals** it — detects bugs at 3am, writes the fix, opens a PR, merges it
+1. **Intent parsing** from natural language into a structured app spec
+2. **Project tracking** through a FastAPI control plane and Next.js dashboard
+3. **Infrastructure reconciliation** with explicit synced, drifted, skipped, and error states
+4. **Credential management** with encrypted-at-rest API keys
+5. **Agent/runtime scaffolding** for future autofix, swarm, and business-agent loops
 
-No "here's some starter code, good luck." **Done means live and self-healing.**
+The product goal is larger: live scaffolding, deploys, monitoring, and self-healing PRs. Those paths are being hardened behind explicit auth, credentials, and quota gates before they are treated as production-ready.
 
 ### See it in action:
 
@@ -40,20 +40,18 @@ features: [shopify-checkout, size-guide, BLIK-payments, inventory-sync]
 market: PL
 EOF
 
-# Then...
-powerhouse build
-# → 5 minutes later: https://bez-spinki.pl is live
-# → Products synced, payments working, monitoring active
-# → Errors? The autofix daemon handles them while you sleep
+# Then run the API/dashboard and reconcile the declared resources.
+python3 run_api.py
+# → http://localhost:8080/api/health
 ```
 
 ---
 
 ## 🔥 The Difference
 
-Every AI coding tool stops at **code generation**. You still have to wire up databases, configure auth, set up monitoring, handle errors at 3am.
+Most AI coding tools stop at **code generation**. Powerhouse is aimed at the next layer: declared resources, deploy state, observability, and repair workflows.
 
-Powerhouse doesn't stop until your business is **running, watched, and self-repairing.**
+The current repo is a foundation for that loop. Evaluate it as a prototype control plane, not as a finished production autonomous operator.
 
 ```
 YOU: "Build me a store"
@@ -68,7 +66,7 @@ YOU: "Build me a store"
 │  🚀 DevOps       → Deploys to Vercel, configures Shopify    │
 │  🧪 Tester       → Fuzzes inputs, runs edge cases           │
 │                                                             │
-│  They loop until Reviewer says PASS. Then opens a PR.       │
+│  Target: loop until Reviewer says PASS, then open a PR.     │
 └────────────────────────────────────────────────────────────┘
      │
      ▼  LIVE at https://your-store.com
@@ -78,13 +76,11 @@ YOU: "Build me a store"
 │  🤖 AUTOFIX DAEMON                                          │
 │  → Reads stack trace                                        │
 │  → Diagnoses root cause                                     │
-│  → Generates patch → commits → opens PR                     │
-│  → CI passes → MERGED                                       │
-│  → You wake up to: "Fixed while you were sleeping ✨"       │
+│  → Target: generate patch, open PR, verify CI               │
 └────────────────────────────────────────────────────────────┘
 ```
 
-> **This isn't ChatGPT with a deploy button.** This is an autonomous engineering organization that doesn't sleep.
+> **Current status:** the control plane, dashboard, intent engine, and agent primitives exist. End-to-end autonomous repair is not production-ready yet.
 
 ---
 
@@ -92,10 +88,10 @@ YOU: "Build me a store"
 
 | Business Type | What Powerhouse Handles | Time to Live |
 |---|---|---|
-| 🛍️ **Ecommerce store** | Shopify backend, Next.js storefront, BLIK/Stripe payments, inventory sync, size guides, shipping rates | **5 min** |
-| 📊 **SaaS dashboard** | Clerk auth, Supabase, Stripe billing, real-time analytics, team management | **3 min** |
-| 🤖 **API service** | FastAPI, rate limiting, API keys, webhooks, OpenAPI docs, monitoring | **2 min** |
-| 🧪 **ML pipeline** | RunPod training, model evaluation, experiment tracking, dataset versioning | **10 min** |
+| 🛍️ **Ecommerce store** | Intent parsing and scaffold target; payments/inventory integrations planned | Prototype |
+| 📊 **SaaS dashboard** | FastAPI + Next.js dashboard exists; auth/billing hardening planned | In progress |
+| 🤖 **API service** | FastAPI control plane, project tracking, key storage, reconciliation | In progress |
+| 🧪 **ML pipeline** | RunPod/training workflow is roadmap only | Planned |
 
 ---
 
@@ -115,19 +111,19 @@ billing: stripe
 monitoring: sentry+phoenix
 ```
 
-The engine reads this, reconciles it against reality, and makes it true:
-- GitHub repo exists? If not → creates it
-- Database provisioned? If not → provisions it  
-- CI/CD running? If not → configures it
-- **Every resource declared = verified or created.** No drift. No forgotten configs.
+The engine reads this and compares declared resources with reality:
+- GitHub repo exists? If credentials are configured, verify or create it
+- Deploy target present? Verify supported provider state or report skipped
+- CI/CD running? Check what can be verified and report drift
+- **Every resource declared = synced, drifted, skipped, or errored.** Skipped work is not reported as healthy.
 
 ### 2. The Autonomy Core
 What makes Powerhouse actually autonomous — not just a fancy scaffold script:
 
-- **Event Bus** — agents communicate through typed events. Deploy completes → inventory agent notices → syncs products. No polling, no cron.
-- **Episodic Memory** — every decision, error, and fix is remembered. "Have we seen this bug before?" → Yes, here's what worked.
-- **Model Router** — complex architecture goes to Claude Opus. Quick fixes go to Llama (free). Saves 70% on API costs.
-- **Deliberation Council** — 5 agents vote on high-stakes actions. Hotfix deploy? 4/5 approve → proceed. Rollback? Rejected.
+- **Event Bus** — agents communicate through typed in-process events.
+- **Episodic Memory** — in-memory fallback exists; ChromaDB/Supabase persistence is being integrated.
+- **Model Router** — routing primitives exist; LiteLLM/OpenRouter hardening is still planned.
+- **Deliberation Council** — a heuristic council exists; production agent deliberation is planned.
 
 ### 3. Business Agents
 Domain-specific agents that run your business:
@@ -173,8 +169,10 @@ curl -X POST http://localhost:8080/api/projects \
 
 # 5. Trigger reconciliation
 curl -X POST http://localhost:8080/api/projects/<id>/reconcile
-# → Infrastructure reconciles to match your intent
+# → Infrastructure checks are reported as synced, drifted, skipped, or error
 ```
+
+`run_api.py` sets local-only development auth and dev secret encryption defaults. In production, configure Clerk, `POWERHOUSE_SECRET_KEY`, explicit `POWERHOUSE_CORS_ORIGINS`, and leave `POWERHOUSE_ALLOW_DEV_AUTH` disabled.
 
 ---
 
@@ -182,16 +180,16 @@ curl -X POST http://localhost:8080/api/projects/<id>/reconcile
 
 | | Bolt | Lovable | v0 | Replit | **Powerhouse** |
 |---|---|---|---|---|---|
-| Builds an app | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Deploys it | ✅ | ✅ | ✅ | ✅ | ✅ |
-| CI/CD + monitoring | ❌ | ❌ | ❌ | ❌ | ✅ |
-| **Self-healing** | ❌ | ❌ | ❌ | ❌ | **✅** |
-| **Remembers decisions** | ❌ | ❌ | ❌ | ❌ | **✅** |
-| **Agent swarms** | ❌ | ❌ | ⚠️ | ❌ | **✅** |
-| **Business agents** | ❌ | ❌ | ❌ | ❌ | **✅** |
+| Builds an app | ✅ | ✅ | ✅ | ✅ | 🏗️ |
+| Deploys it | ✅ | ✅ | ✅ | ✅ | gated prototype |
+| CI/CD + monitoring | ❌ | ❌ | ❌ | ❌ | 🏗️ |
+| **Self-healing** | ❌ | ❌ | ❌ | ❌ | planned |
+| **Remembers decisions** | ❌ | ❌ | ❌ | ❌ | prototype |
+| **Agent swarms** | ❌ | ❌ | ⚠️ | ❌ | scaffolded |
+| **Business agents** | ❌ | ❌ | ❌ | ❌ | prototype |
 | Open source | ❌ | ❌ | ❌ | ❌ | **✅ MIT** |
 
-> **Our moat:** When your store crashes at 3am, Bolt gives you an error message. Powerhouse fixes it while you sleep.
+> **Moat target:** closed-loop repair from production error to verified PR.
 
 ---
 
@@ -199,8 +197,8 @@ curl -X POST http://localhost:8080/api/projects/<id>/reconcile
 
 | Phase | Status |
 |---|---|
-| **Foundation** — Vector memory, model routing, event bus | ✅ |
-| **Autonomy** — Agent swarms, deliberation council, autofix daemon | ✅ |
+| **Foundation** — Vector memory, model routing, event bus | 🏗️ In progress |
+| **Autonomy** — Agent swarms, deliberation council, autofix daemon | 🏗️ In progress |
 | **SaaS** — Multi-tenant, Clerk auth, Stripe billing | 🏗️ In progress |
 | **Scale** — RunPod training, enterprise SSO, SOC-2 | 📅 Q3 2026 |
 
@@ -208,9 +206,9 @@ curl -X POST http://localhost:8080/api/projects/<id>/reconcile
 
 ## 🤝 Who's This For?
 
-- **Solo founders** — Ship a complete business in an afternoon, not a quarter
-- **Agencies** — One platform for all client projects. Auto-deploy, auto-fix, auto-bill
-- **Ecommerce operators** — Merchandising agent watches margins, growth agent runs A/B tests
+- **Solo founders** — prototype app and infrastructure intent quickly
+- **Agencies** — manage declared resources and project status from one control plane
+- **Ecommerce operators** — experiment with merchandising and growth-agent primitives
 - **AI researchers** — RunPod integration for training + evaluation pipelines
 
 ---

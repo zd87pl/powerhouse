@@ -100,16 +100,16 @@ All stored in `docs/adrs/`:
 | Phase 4: Beta | 2 wks | Invite-only beta, feedback, iteration |
 
 ### Critical Preconditions (Must Have Before Tenant Zero)
-1. ✅ Egress allow-lists for agent containers
-2. ✅ Per-tenant DB credentials (not shared superuser)
-3. ✅ Secrets management (HashiCorp Vault or 1Password)
-4. ✅ Crypto-signed audit logs
-5. ✅ Daily GPU spend caps with kill switch
-6. ✅ ChromaDB access proxy with tenant enforcement
-7. ✅ Free tier for competitive parity
-8. ✅ Prepaid credits model (not pure metered overage)
-9. ✅ Demo-first onboarding (show value before OAuth hell)
-10. ✅ Pentest / bug bounty before public launch
+1. ❌ Egress allow-lists for agent containers
+2. ❌ Per-tenant DB credentials (not shared superuser)
+3. 🏗️ Secrets management (local Fernet encryption now, Vault/1Password still planned)
+4. ❌ Crypto-signed audit logs
+5. ❌ Daily GPU spend caps with kill switch
+6. ❌ ChromaDB access proxy with tenant enforcement
+7. ❌ Free tier for competitive parity
+8. ❌ Prepaid credits model (not pure metered overage)
+9. ❌ Demo-first onboarding (show value before OAuth hell)
+10. ❌ Pentest / bug bounty before public launch
 
 ---
 

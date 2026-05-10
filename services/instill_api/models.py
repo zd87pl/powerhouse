@@ -115,7 +115,7 @@ class ApiKey(Base):
     tenant_id = Column(String, ForeignKey("tenants.id"), nullable=False, index=True)
     provider = Column(String, nullable=False)  # github, vercel, flyio, sentry
     key_name = Column(String, nullable=False)  # display name
-    encrypted_value = Column(Text, nullable=False)  # TODO: encrypt with Vault/fernet
+    encrypted_value = Column(Text, nullable=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     tenant = relationship("Tenant", back_populates="api_keys")

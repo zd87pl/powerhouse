@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 import shutil
 import re
+import html as html_lib
 import httpx
 import jwt
 from datetime import datetime, timezone
@@ -41,6 +42,64 @@ from .schemas import (
     ReconcileRequest,
     ReconciliationRunResponse,
 )
+from .secrets import SecretConfigError, encrypt_secret
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _runtime_env() -> str:
+    return os.getenv("POWERHOUSE_ENV", os.getenv("ENV", "production")).lower()
+
+
+def _dev_auth_allowed() -> bool:
+    return _env_bool("POWERHOUSE_ALLOW_DEV_AUTH") or _runtime_env() in {
+        "development",
+        "local",
+        "test",
+    }
+
+
+def _cors_origins() -> list[str]:
+    configured = os.getenv("POWERHOUSE_CORS_ORIGINS", "")
+    if configured:
+        return [origin.strip() for origin in configured.split(",") if origin.strip()]
+    if _dev_auth_allowed():
+        return [
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+            "http://localhost:3001",
+            "http://127.0.0.1:3001",
+        ]
+    return []
+
+
+def _slugify_project(value: str) -> str:
+    slug = re.sub(r"[^a-z0-9-]+", "-", value.strip().lower())
+    slug = re.sub(r"-{2,}", "-", slug).strip("-")
+    if not slug:
+        raise HTTPException(status_code=422, detail="Project slug cannot be empty")
+    return slug[:64]
+
+
+def _require_builds_enabled() -> None:
+    if not _env_bool("POWERHOUSE_ENABLE_BUILDS"):
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Build/deploy endpoints are disabled. Set POWERHOUSE_ENABLE_BUILDS=1 "
+                "after auth, quotas, and provider credentials are configured."
+            ),
+        )
+
+
+def _redact(value: str, secret: str) -> str:
+    return value.replace(secret, "[redacted]") if secret else value
+
 
 app = FastAPI(
     title="Instill API",
@@ -50,7 +109,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Tighten in production
+    allow_origins=_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -73,7 +132,7 @@ def _get_jwks_client() -> jwt.PyJWKClient:
 async def get_clerk_user_id(request: Request) -> Optional[str]:
     """Extract Clerk user ID from JWT in Authorization header.
 
-    Returns None if no auth header present (dev fallback).
+    Returns None if no auth header is present.
     Raises HTTPException on invalid/expired tokens.
     """
     auth = request.headers.get("Authorization", "")
@@ -83,7 +142,10 @@ async def get_clerk_user_id(request: Request) -> Optional[str]:
     token = auth[7:]
     clerk_secret = os.getenv("CLERK_SECRET_KEY")
     if not clerk_secret:
-        return None  # Dev mode — no Clerk configured
+        raise HTTPException(
+            status_code=503,
+            detail="CLERK_SECRET_KEY is required to validate bearer tokens",
+        )
 
     try:
         client = _get_jwks_client()
@@ -112,7 +174,7 @@ async def get_current_tenant(
     request: Request,
     session: Session = Depends(get_session),
 ) -> Tenant:
-    """Get tenant from Clerk JWT, or fall back to dev tenant."""
+    """Get tenant from Clerk JWT, with explicit local-only dev fallback."""
     clerk_user_id = await get_clerk_user_id(request)
 
     if clerk_user_id:
@@ -132,7 +194,10 @@ async def get_current_tenant(
         session.refresh(tenant)
         return tenant
 
-    # No auth → dev fallback
+    if not _dev_auth_allowed():
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    # Local development fallback only. Production must use Clerk.
     tenant = session.query(Tenant).first()
     if tenant is None:
         tenant = Tenant(
@@ -158,7 +223,10 @@ async def health():
 
 
 @app.post("/parse", response_model=ParseResponse)
-async def parse_intent(data: ParseRequest):
+async def parse_intent(
+    data: ParseRequest,
+    tenant: Tenant = Depends(get_current_tenant),
+):
     """Parse a natural language business description into a structured spec."""
     import json
     import re
@@ -456,23 +524,25 @@ def _render_template(template: str, **kwargs) -> str:
 
 
 @app.post("/build", response_model=BuildResponse)
-async def build_project(data: BuildRequest = None, raw_data: Request = None):
+async def build_project(
+    data: BuildRequest,
+    tenant: Tenant = Depends(get_current_tenant),
+):
     """Scaffold a real Next.js project and deploy to Vercel.
 
     Accepts either JSON body (BuildRequest) or a parsed intent from /parse.
     Returns the live Vercel URL once deployed.
     """
 
-    # Handle both direct BuildRequest and raw JSON (from landing page)
-    if data is None and raw_data is not None:
-        body = await raw_data.json()
-        data = BuildRequest(**body)
-    elif data is None:
-        raise HTTPException(status_code=400, detail="Missing request body")
+    _require_builds_enabled()
 
-    project_slug = data.project.strip().lower().replace(" ", "-")
-    features_str = ", ".join(data.features) if data.features else "a web application"
-    market = data.market or "global"
+    project_slug = _slugify_project(data.project)
+    features_str = (
+        ", ".join(html_lib.escape(f) for f in data.features)
+        if data.features
+        else "a web application"
+    )
+    market = html_lib.escape(data.market or "global")
 
     vercel_token = os.getenv("VERCEL_TOKEN", "")
     if not vercel_token:
@@ -492,11 +562,12 @@ async def build_project(data: BuildRequest = None, raw_data: Request = None):
         # Generate a beautiful HTML page with Tailwind CSS CDN
         features_html = ""
         for f in data.features[:10]:
-            features_html += f'            <li class="flex items-center gap-2"><span class="text-purple-400">▸</span> {f.replace("-", " ").title()}</li>\n'
+            label = html_lib.escape(f.replace("-", " ").title())
+            features_html += f'            <li class="flex items-center gap-2"><span class="text-purple-400">▸</span> {label}</li>\n'
         if not features_html:
             features_html = '            <li class="flex items-center gap-2"><span class="text-purple-400">▸</span> Responsive Web Application</li>\n'
 
-        title = project_slug.replace("-", " ").title()
+        title = html_lib.escape(project_slug.replace("-", " ").title())
 
         html = f"""<!DOCTYPE html>
 <html lang="en" class="scroll-smooth">
@@ -577,7 +648,7 @@ async def build_project(data: BuildRequest = None, raw_data: Request = None):
         if deploy_result.returncode != 0:
             raise HTTPException(
                 status_code=500,
-                detail=f"Vercel deploy failed: {deploy_result.stderr[-500:]}",
+                detail=f"Vercel deploy failed: {_redact(deploy_result.stderr[-500:], vercel_token)}",
             )
 
         # Extract the deployment URL
@@ -771,8 +842,8 @@ def _generate_page_tsx(title: str, subtitle: str, features: list) -> str:
 export default function HomePage() {{
   return (
     <Hero
-      title="{title}"
-      subtitle="{subtitle}"
+      title={{{_json.dumps(title)}}}
+      subtitle={{{_json.dumps(subtitle)}}}
       features={{{_json.dumps(features)}}}
     />
   );
@@ -811,7 +882,10 @@ export default function FeaturesPage() {{
 
 
 @app.post("/swarm-build", response_model=BuildResponse)
-async def swarm_build(data: BuildRequest):
+async def swarm_build(
+    data: BuildRequest,
+    tenant: Tenant = Depends(get_current_tenant),
+):
     """Agent Swarm: Architect → Coder → DevOps. Builds a real Next.js project.
 
     Phase 1 (Architect): Parse intent → project plan
@@ -820,7 +894,9 @@ async def swarm_build(data: BuildRequest):
     """
     import json as json_mod
 
-    project_slug = data.project.strip().lower().replace(" ", "-")
+    _require_builds_enabled()
+
+    project_slug = _slugify_project(data.project)
     features = data.features if data.features else ["responsive", "modern-ui"]
     title = project_slug.replace("-", " ").title()
     subtitle = f"A {', '.join(features[:3]).replace('-', ' ')} application targeting {data.market or 'global'} market."
@@ -829,11 +905,14 @@ async def swarm_build(data: BuildRequest):
 
     github_token = os.getenv("GITHUB_TOKEN", "")
     vercel_token = os.getenv("VERCEL_TOKEN", "")
+    github_owner = os.getenv("GITHUB_OWNER", "")
 
     if not github_token:
         raise HTTPException(status_code=503, detail="GITHUB_TOKEN not configured")
     if not vercel_token:
         raise HTTPException(status_code=503, detail="VERCEL_TOKEN not configured")
+    if not github_owner:
+        raise HTTPException(status_code=503, detail="GITHUB_OWNER not configured")
 
     build_dir = tempfile.mkdtemp(prefix="swarm-build-")
 
@@ -940,7 +1019,9 @@ export default function AboutPage() {{
 
         # Check if repo exists
         check_req = urlreq.Request(
-            f"{gh_api}/repos/zd87pl/{project_slug}", headers=gh_headers, method="GET"
+            f"{gh_api}/repos/{github_owner}/{project_slug}",
+            headers=gh_headers,
+            method="GET",
         )
         try:
             urlreq.urlopen(check_req)
@@ -1003,15 +1084,21 @@ export default function AboutPage() {{
         )
 
         # Push
-        repo_url = f"https://zd87pl:{github_token}@github.com/zd87pl/{project_slug}.git"
-        subprocess.run(
+        repo_url = (
+            f"https://{github_owner}:{github_token}"
+            f"@github.com/{github_owner}/{project_slug}.git"
+        )
+        push_result = subprocess.run(
             ["git", "push", "-u", repo_url, "main"],
             cwd=project_dir,
             capture_output=True,
             text=True,
             timeout=30,
         )
-        github_url = f"https://github.com/zd87pl/{project_slug}"
+        if push_result.returncode != 0:
+            stderr = _redact(push_result.stderr[-500:], github_token)
+            raise HTTPException(status_code=500, detail=f"GitHub push failed: {stderr}")
+        github_url = f"https://github.com/{github_owner}/{project_slug}"
 
         # 3c. Deploy to Vercel
         deploy_url = ""
@@ -1027,7 +1114,7 @@ export default function AboutPage() {{
                 "name": project_slug,
                 "framework": "nextjs",
                 "gitRepository": {
-                    "repo": f"zd87pl/{project_slug}",
+                    "repo": f"{github_owner}/{project_slug}",
                     "type": "github",
                 },
                 "ssoProtection": None,
@@ -1050,7 +1137,7 @@ export default function AboutPage() {{
                         "target": "production",
                         "gitSource": {
                             "type": "github",
-                            "repo": f"zd87pl/{project_slug}",
+                            "repo": f"{github_owner}/{project_slug}",
                             "ref": "main",
                         },
                     }
@@ -1247,6 +1334,8 @@ async def reconcile_project(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
+    if data.intent_yaml is not None:
+        project.intent_yaml = data.intent_yaml
     project.status = "reconciling"
     run = ReconciliationRun(
         id=gen_id(),
@@ -1259,10 +1348,10 @@ async def reconcile_project(
 
     try:
         results, summary = _run_reconciliation(project.intent_yaml, data.dry_run)
-        run.status = "synced" if summary["healthy"] else "drifted"
+        run.status = _status_from_summary(summary)
         run.drifts_found = summary.get("by_status", {})
         run.resources_checked = [r["resource_key"] for r in results]
-        run.log = str(results)
+        run.log = _serialize_run_log(results, summary)
         project.status = run.status
         project.updated_at = datetime.now(timezone.utc)
     except Exception as e:
@@ -1292,7 +1381,10 @@ async def list_reconciliations(
 ):
     runs = (
         session.query(ReconciliationRun)
-        .filter(ReconciliationRun.project_id == project_id)
+        .join(Project)
+        .filter(
+            ReconciliationRun.project_id == project_id, Project.tenant_id == tenant.id
+        )
         .order_by(ReconciliationRun.created_at.desc())
         .limit(limit)
         .all()
@@ -1334,7 +1426,7 @@ async def trigger_agent(
 
     try:
         output = _run_agent(data.agent_type, data.input_spec, project.intent_yaml)
-        run.status = "completed"
+        run.status = "failed"
         run.output = output
         run.completed_at = datetime.now(timezone.utc)
     except Exception:
@@ -1356,7 +1448,8 @@ async def list_agent_runs(
 ):
     runs = (
         session.query(AgentRun)
-        .filter(AgentRun.project_id == project_id)
+        .join(Project)
+        .filter(AgentRun.project_id == project_id, Project.tenant_id == tenant.id)
         .order_by(AgentRun.created_at.desc())
         .limit(limit)
         .all()
@@ -1382,13 +1475,17 @@ async def create_api_key(
     session: Session = Depends(get_session),
     tenant: Tenant = Depends(get_current_tenant),
 ):
-    # TODO: encrypt key_value with Fernet before storage
+    try:
+        encrypted_value = encrypt_secret(data.key_value)
+    except SecretConfigError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+
     key = ApiKey(
         id=gen_id(),
         tenant_id=tenant.id,
         provider=data.provider,
         key_name=data.key_name,
-        encrypted_value=data.key_value,  # TODO: encrypt
+        encrypted_value=encrypted_value,
     )
     session.add(key)
     session.commit()
@@ -1416,91 +1513,74 @@ async def delete_api_key(
 # ── Internal: reconciliation logic ──
 
 
+def _status_from_summary(summary: dict) -> str:
+    if summary.get("errors"):
+        return "error"
+    return "synced" if summary.get("healthy") else "drifted"
+
+
+def _serialize_run_log(results: list[dict], summary: dict) -> str:
+    import json
+
+    return json.dumps({"summary": summary, "results": results}, indent=2, default=str)
+
+
 def _run_reconciliation(intent_yaml: str, dry_run: bool = False):
-    """Parse intent YAML and simulate reconciliation (self-contained, no external imports)."""
+    """Parse intent YAML and reconcile declared resources."""
     import yaml
 
     data = yaml.safe_load(intent_yaml) if intent_yaml else {}
+    if data is None:
+        data = {}
+    if not isinstance(data, dict):
+        raise ValueError("Intent YAML must parse to a mapping/object")
 
-    resources = ["github_repo"]
+    import sys
 
-    deploy = data.get("deploy", {}) or {}
-    provider = deploy.get("provider", "none")
-    if provider and provider != "none":
-        resources.append(f"deploy_{provider}")
+    base_dir = os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    )
+    if base_dir not in sys.path:
+        sys.path.insert(0, base_dir)
+    from services.intent_engine.schema import IntentFile
+    from services.intent_engine.reconciler import reconcile, reconcile_summary
+    from services.intent_engine.resolvers import register_default_resolvers
 
-    monitoring = data.get("monitoring", {}) or {}
-    if monitoring.get("sentry"):
-        resources.append("sentry_project")
-    if monitoring.get("phoenix"):
-        resources.append("phoenix_project")
+    register_default_resolvers()
+    intent = IntentFile.from_dict(data)
+    results = reconcile(intent, dry_run=dry_run)
+    summary = reconcile_summary(results)
 
-    memory = data.get("memory", {}) or {}
-    if memory.get("chromadb"):
-        resources.append("chromadb_collection")
-
-    ci = data.get("ci", {}) or {}
-    if ci.get("runner", "github_actions") != "none":
-        resources.append("ci_pipeline")
-
-    # Try to use the real intent engine if available
-    try:
-        import sys
-
-        base_dir = os.path.dirname(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        )
-        if base_dir not in sys.path:
-            sys.path.insert(0, base_dir)
-        from services.intent_engine.schema import IntentFile
-        from services.intent_engine.reconciler import reconcile, reconcile_summary
-
-        intent = IntentFile.from_dict(data)
-        results = reconcile(intent, dry_run=dry_run)
-        summary = reconcile_summary(results)
-
-        results_dict = [
-            {
-                "resource_key": r.resource_key,
-                "status": r.status.value,
-                "action_taken": r.action_taken,
-                "drifts_found": len(r.drifts_found),
-                "drifts_resolved": r.drifts_resolved,
-                "error_message": r.error_message,
-                "duration_ms": r.duration_ms,
-            }
-            for r in results
-        ]
-        return results_dict, summary
-    except Exception:
-        pass
-
-    # Simulated reconciliation (no resolvers registered yet)
     results_dict = [
         {
-            "resource_key": r,
-            "status": "skipped",
-            "action_taken": "no resolver registered for " + r,
-            "drifts_found": 0,
-            "drifts_resolved": 0,
-            "error_message": None,
-            "duration_ms": 0.0,
+            "resource_key": r.resource_key,
+            "status": r.status.value,
+            "action_taken": r.action_taken,
+            "drifts_found": [
+                {
+                    "field": d.field,
+                    "declared": d.declared,
+                    "actual": d.actual,
+                    "severity": d.severity,
+                }
+                for d in r.drifts_found
+            ],
+            "drifts_resolved": r.drifts_resolved,
+            "error_message": r.error_message,
+            "duration_ms": r.duration_ms,
         }
-        for r in resources
+        for r in results
     ]
-    summary = {
-        "total_resources": len(resources),
-        "by_status": {"skipped": len(resources)},
-        "total_drifts": 0,
-        "errors": [],
-        "healthy": True,
-    }
     return results_dict, summary
 
 
 def _run_agent(agent_type: str, input_spec: str, intent_yaml: str = "") -> str:
-    """Stub agent dispatch. Replace with actual Hermes agent calls."""
-    return f"[stub] {agent_type} agent dispatched with spec: {input_spec[:200]}"
+    """Return an explicit unsupported-agent message until the runtime is wired."""
+    return (
+        f"{agent_type} agent runtime is not wired to this API yet. "
+        "Use reconciliation for infrastructure checks; agent execution needs the "
+        "orchestrator worker integration before it can make changes."
+    )
 
 
 # ── Startup ──

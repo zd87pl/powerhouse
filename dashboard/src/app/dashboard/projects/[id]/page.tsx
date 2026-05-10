@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Loader2, Trash2, Play, History, Bot } from "lucide-react";
 import { api, type Project, type ReconciliationRun, type AgentRun } from "@/lib/api";
-import { formatDate, statusColor } from "@/lib/utils";
+import { errorMessage, formatDate, statusColor } from "@/lib/utils";
 import { IntentEditor } from "@/components/intent-editor";
 
 type Tab = "overview" | "reconciliations" | "agents";
@@ -20,44 +20,46 @@ export default function ProjectDetailPage() {
   const [agentRuns, setAgentRuns] = useState<AgentRun[]>([]);
   const [triggering, setTriggering] = useState(false);
 
-  const fetchProject = async () => {
+  const fetchProject = useCallback(async () => {
     try {
       const data = await api.projects.get(id);
       setProject(data);
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e: unknown) {
+      setError(errorMessage(e));
     } finally {
       setLoading(false);
     }
-  };
+  }, [id]);
 
-  const fetchReconciliations = async () => {
+  const fetchReconciliations = useCallback(async () => {
     try {
       const data = await api.projects.reconciliations(id);
       setReconciliations(data);
     } catch {}
-  };
+  }, [id]);
 
-  const fetchAgentRuns = async () => {
+  const fetchAgentRuns = useCallback(async () => {
     try {
       const data = await api.projects.agentRuns(id);
       setAgentRuns(data);
     } catch {}
-  };
+  }, [id]);
 
   useEffect(() => {
-    fetchProject();
-    fetchReconciliations();
-    fetchAgentRuns();
-  }, [id]);
+    void Promise.resolve().then(() => {
+      fetchProject();
+      fetchReconciliations();
+      fetchAgentRuns();
+    });
+  }, [fetchAgentRuns, fetchProject, fetchReconciliations]);
 
   const handleDelete = async () => {
     if (!confirm("Delete this project?")) return;
     try {
       await api.projects.delete(id);
       router.push("/dashboard");
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e: unknown) {
+      setError(errorMessage(e));
     }
   };
 
@@ -66,8 +68,8 @@ export default function ProjectDetailPage() {
     try {
       await api.projects.triggerAgent(id, agentType, project?.intent_yaml || "");
       fetchAgentRuns();
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e: unknown) {
+      setError(errorMessage(e));
     } finally {
       setTriggering(false);
     }
@@ -125,12 +127,12 @@ export default function ProjectDetailPage() {
       <div className="flex items-center gap-6 mb-6 text-sm">
         <span className="text-slate-500 uppercase tracking-wider">{project.stack}</span>
         {project.github_repo_url && (
-          <a href={project.github_repo_url} target="_blank" className="text-indigo-400 hover:underline">
+          <a href={project.github_repo_url} target="_blank" rel="noreferrer" className="text-indigo-400 hover:underline">
             GitHub ↗
           </a>
         )}
         {project.deploy_url && (
-          <a href={project.deploy_url} target="_blank" className="text-indigo-400 hover:underline">
+          <a href={project.deploy_url} target="_blank" rel="noreferrer" className="text-indigo-400 hover:underline">
             Deploy ↗
           </a>
         )}
@@ -186,7 +188,14 @@ export default function ProjectDetailPage() {
           </div>
 
           {/* Intent Editor */}
-          <IntentEditor projectId={project.id} initialYaml={project.intent_yaml} />
+          <IntentEditor
+            projectId={project.id}
+            initialYaml={project.intent_yaml}
+            onReconciled={() => {
+              fetchProject();
+              fetchReconciliations();
+            }}
+          />
 
           {/* Stats grid */}
           <div className="grid grid-cols-3 gap-4">
@@ -260,7 +269,7 @@ export default function ProjectDetailPage() {
                 </div>
                 {run.output && <p className="text-sm text-slate-400 mt-2 line-clamp-3">{run.output}</p>}
                 {run.pr_url && (
-                  <a href={run.pr_url} target="_blank" className="text-indigo-400 text-sm mt-1 inline-block hover:underline">
+                  <a href={run.pr_url} target="_blank" rel="noreferrer" className="text-indigo-400 text-sm mt-1 inline-block hover:underline">
                     View PR ↗
                   </a>
                 )}

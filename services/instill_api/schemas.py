@@ -47,6 +47,7 @@ class ProjectListResponse(BaseModel):
 
 class ReconcileRequest(BaseModel):
     dry_run: bool = False
+    intent_yaml: Optional[str] = None
 
 
 class ReconciliationRunResponse(BaseModel):

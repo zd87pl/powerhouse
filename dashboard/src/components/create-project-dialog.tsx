@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { X, Loader2 } from "lucide-react";
 import { api, type Project } from "@/lib/api";
+import { errorMessage } from "@/lib/utils";
 
 const STACKS = ["nextjs", "fastapi", "fullstack", "static", "custom"];
 
@@ -40,8 +41,8 @@ export function CreateProjectDialog({
       setName("");
       setDescription("");
       setIntentYaml("");
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e: unknown) {
+      setError(errorMessage(e));
     } finally {
       setLoading(false);
     }
