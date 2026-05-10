@@ -40,6 +40,9 @@ class Tenant(Base):
     api_keys = relationship(
         "ApiKey", back_populates="tenant", cascade="all, delete-orphan"
     )
+    project_runs = relationship(
+        "ProjectRun", back_populates="tenant", cascade="all, delete-orphan"
+    )
 
 
 class Project(Base):
@@ -69,6 +72,9 @@ class Project(Base):
     )
     agent_runs = relationship(
         "AgentRun", back_populates="project", cascade="all, delete-orphan"
+    )
+    project_runs = relationship(
+        "ProjectRun", back_populates="project", cascade="all, delete-orphan"
     )
 
 
@@ -106,6 +112,31 @@ class AgentRun(Base):
     completed_at = Column(DateTime, nullable=True)
 
     project = relationship("Project", back_populates="agent_runs")
+
+
+class ProjectRun(Base):
+    __tablename__ = "project_runs"
+
+    id = Column(String, primary_key=True, default=gen_id)
+    tenant_id = Column(String, ForeignKey("tenants.id"), nullable=False, index=True)
+    project_id = Column(String, ForeignKey("projects.id"), nullable=False, index=True)
+    run_type = Column(
+        String, nullable=False
+    )  # setup, reconcile, scaffold, autofix, agent
+    status = Column(
+        String, default="queued"
+    )  # queued, running, succeeded, failed, skipped, action_required
+    title = Column(String, nullable=False)
+    summary = Column(Text, default="")
+    log = Column(Text, default="")
+    steps = Column(JSON, default=list)
+    run_metadata = Column(JSON, default=dict)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+
+    tenant = relationship("Tenant", back_populates="project_runs")
+    project = relationship("Project", back_populates="project_runs")
 
 
 class ApiKey(Base):
