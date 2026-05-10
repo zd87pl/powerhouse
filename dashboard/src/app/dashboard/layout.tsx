@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Box, Key, LayoutDashboard, Settings } from "lucide-react";
+import { Box, Key, LayoutDashboard, Plug, Settings } from "lucide-react";
 
 const navItems = [
   { href: "/dashboard", label: "Projects", icon: LayoutDashboard },
+  { href: "/dashboard/setup", label: "Setup", icon: Plug },
   { href: "/dashboard/keys", label: "API Keys", icon: Key },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];

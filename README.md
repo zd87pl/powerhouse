@@ -162,17 +162,23 @@ pip install -r requirements.txt
 python3 run_api.py
 # → http://localhost:8080/api/health
 
-# 4. Create your first project
+# 4. Optional: run the dashboard
+cd dashboard && npm install && npm run dev
+# → http://localhost:3000/dashboard/setup
+
+# 5. Create your first project
 curl -X POST http://localhost:8080/api/projects \
   -H "Content-Type: application/json" \
   -d '{"name": "my-store", "stack": "nextjs", "intent_yaml": "project: my-store\nstack: nextjs\ndeploy:\n  provider: vercel"}'
 
-# 5. Trigger reconciliation
+# 6. Trigger reconciliation
 curl -X POST http://localhost:8080/api/projects/<id>/reconcile
 # → Infrastructure checks are reported as synced, drifted, skipped, or error
 ```
 
 `run_api.py` sets local-only development auth and dev secret encryption defaults. In production, configure Clerk, `POWERHOUSE_SECRET_KEY`, explicit `POWERHOUSE_CORS_ORIGINS`, and leave `POWERHOUSE_ALLOW_DEV_AUTH` disabled.
+
+The setup dashboard reports each provider as connected from environment variables, configured from encrypted user-supplied keys, or missing. Required providers currently start with GitHub and Vercel so OSS users can bring their own tokens while the control plane keeps project progress visible.
 
 ---
 

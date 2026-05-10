@@ -1,7 +1,7 @@
 """Pydantic schemas for API request/response validation."""
 
 from datetime import datetime
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -65,6 +65,52 @@ class ReconciliationRunResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+# ── Setup ──
+
+
+class SetupProviderStatus(BaseModel):
+    provider: str
+    label: str
+    required: bool
+    status: str
+    source: str
+    has_key: bool
+    required_env: List[str]
+    missing_env: List[str]
+    docs_url: str
+    next_action: str
+
+
+class SetupStatusResponse(BaseModel):
+    ready: bool
+    connected: int
+    configured: int
+    missing_required: int
+    total: int
+    providers: List[SetupProviderStatus]
+
+
+# ── Project Runs ──
+
+
+class ProjectRunResponse(BaseModel):
+    id: str
+    tenant_id: str
+    project_id: str
+    run_type: str
+    status: str
+    title: str
+    summary: str
+    log: str
+    steps: List[Dict[str, Any]]
+    run_metadata: Dict[str, Any]
+    created_at: datetime
+    started_at: Optional[datetime]
+    completed_at: Optional[datetime]
+
+    model_config = {"from_attributes": True}
+
+
 # ── Agent ──
 
 
@@ -91,7 +137,10 @@ class AgentRunResponse(BaseModel):
 
 
 class ApiKeyCreate(BaseModel):
-    provider: str = Field(..., pattern="^(github|vercel|flyio|sentry)$")
+    provider: str = Field(
+        ...,
+        pattern="^(github|vercel|flyio|sentry|supabase|openrouter|stripe)$",
+    )
     key_name: str
     key_value: str  # Will be encrypted before storage
 

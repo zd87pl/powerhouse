@@ -38,11 +38,49 @@ export interface AgentRun {
   completed_at: string | null;
 }
 
+export interface ProjectRun {
+  id: string;
+  tenant_id: string;
+  project_id: string;
+  run_type: string;
+  status: string;
+  title: string;
+  summary: string;
+  log: string;
+  steps: { label: string; status: string; detail?: string }[];
+  run_metadata: Record<string, unknown>;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
 export interface ApiKey {
   id: string;
   provider: string;
   key_name: string;
   created_at: string;
+}
+
+export interface SetupProviderStatus {
+  provider: string;
+  label: string;
+  required: boolean;
+  status: string;
+  source: string;
+  has_key: boolean;
+  required_env: string[];
+  missing_env: string[];
+  docs_url: string;
+  next_action: string;
+}
+
+export interface SetupStatus {
+  ready: boolean;
+  connected: number;
+  configured: number;
+  missing_required: number;
+  total: number;
+  providers: SetupProviderStatus[];
 }
 
 async function fetchAPI<T>(path: string, options?: RequestInit): Promise<T> {
@@ -73,6 +111,8 @@ export const api = {
       fetchAPI<ReconciliationRun>(`/projects/${id}/reconcile`, { method: "POST", body: JSON.stringify({ dry_run: dryRun, intent_yaml: intentYaml }) }),
     reconciliations: (id: string) =>
       fetchAPI<ReconciliationRun[]>(`/projects/${id}/reconciliations`),
+    runs: (id: string) =>
+      fetchAPI<ProjectRun[]>(`/projects/${id}/runs`),
     triggerAgent: (id: string, agentType: string, inputSpec: string) =>
       fetchAPI<AgentRun>(`/projects/${id}/agents`, { method: "POST", body: JSON.stringify({ agent_type: agentType, input_spec: inputSpec }) }),
     agentRuns: (id: string) =>
@@ -83,5 +123,8 @@ export const api = {
     create: (data: { provider: string; key_name: string; key_value: string }) =>
       fetchAPI<ApiKey>("/keys", { method: "POST", body: JSON.stringify(data) }),
     delete: (id: string) => fetchAPI<void>(`/keys/${id}`, { method: "DELETE" }),
+  },
+  setup: {
+    status: () => fetchAPI<SetupStatus>("/setup/status"),
   },
 };

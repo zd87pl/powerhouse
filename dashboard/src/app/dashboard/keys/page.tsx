@@ -5,7 +5,15 @@ import { Key, Plus, Trash2, Loader2, X } from "lucide-react";
 import { api, type ApiKey } from "@/lib/api";
 import { errorMessage, formatDate } from "@/lib/utils";
 
-const PROVIDERS = ["github", "vercel", "flyio", "sentry"];
+const PROVIDERS = [
+  "github",
+  "vercel",
+  "flyio",
+  "sentry",
+  "supabase",
+  "openrouter",
+  "stripe",
+];
 
 export default function KeysPage() {
   const [keys, setKeys] = useState<ApiKey[]>([]);
@@ -96,7 +104,7 @@ export default function KeysPage() {
         <div className="text-center py-20">
           <Key className="h-16 w-16 mx-auto text-slate-600 mb-4" />
           <h2 className="text-xl font-semibold text-slate-300 mb-2">No API keys</h2>
-          <p className="text-slate-500">Add GitHub, Vercel, or Fly.io credentials to enable deployments</p>
+          <p className="text-slate-500">Add provider credentials to enable setup, deployment, and monitoring workflows</p>
         </div>
       ) : (
         <div className="space-y-3">

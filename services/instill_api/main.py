@@ -10,7 +10,7 @@ import html as html_lib
 import httpx
 import jwt
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from fastapi import FastAPI, Depends, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,6 +21,7 @@ from .models import (
     AgentRun,
     ApiKey,
     Project,
+    ProjectRun,
     ReconciliationRun,
     Tenant,
     gen_id,
@@ -37,10 +38,12 @@ from .schemas import (
     ParseResponse,
     ProjectCreate,
     ProjectListResponse,
+    ProjectRunResponse,
     ProjectResponse,
     ProjectUpdate,
     ReconcileRequest,
     ReconciliationRunResponse,
+    SetupStatusResponse,
 )
 from .secrets import SecretConfigError, encrypt_secret
 
@@ -99,6 +102,136 @@ def _require_builds_enabled() -> None:
 
 def _redact(value: str, secret: str) -> str:
     return value.replace(secret, "[redacted]") if secret else value
+
+
+SETUP_PROVIDERS = [
+    {
+        "provider": "github",
+        "label": "GitHub",
+        "required": True,
+        "required_env": ["GITHUB_TOKEN", "GITHUB_OWNER"],
+        "docs_url": "https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens",
+        "next_action": "Add a GitHub token and owner so Powerhouse can inspect or create repositories.",
+    },
+    {
+        "provider": "vercel",
+        "label": "Vercel",
+        "required": True,
+        "required_env": ["VERCEL_TOKEN"],
+        "docs_url": "https://vercel.com/account/settings/tokens",
+        "next_action": "Add a Vercel token so Powerhouse can deploy generated projects.",
+    },
+    {
+        "provider": "supabase",
+        "label": "Supabase",
+        "required": False,
+        "required_env": ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"],
+        "docs_url": "https://supabase.com/docs/guides/api/api-keys",
+        "next_action": "Add Supabase credentials when a project needs database or auth provisioning.",
+    },
+    {
+        "provider": "sentry",
+        "label": "Sentry",
+        "required": False,
+        "required_env": ["SENTRY_AUTH_TOKEN", "SENTRY_ORG"],
+        "docs_url": "https://docs.sentry.io/api/auth/",
+        "next_action": "Add Sentry credentials to wire production error tracking and autofix inputs.",
+    },
+    {
+        "provider": "openrouter",
+        "label": "OpenRouter",
+        "required": False,
+        "required_env": ["OPENROUTER_API_KEY"],
+        "docs_url": "https://openrouter.ai/settings/keys",
+        "next_action": "Add an OpenRouter key to enable LLM-backed parsing and agent workflows.",
+    },
+    {
+        "provider": "stripe",
+        "label": "Stripe",
+        "required": False,
+        "required_env": ["STRIPE_SECRET_KEY"],
+        "docs_url": "https://docs.stripe.com/keys",
+        "next_action": "Add Stripe credentials when a project needs billing or checkout.",
+    },
+    {
+        "provider": "flyio",
+        "label": "Fly.io",
+        "required": False,
+        "required_env": ["FLY_API_TOKEN"],
+        "docs_url": "https://fly.io/user/personal_access_tokens",
+        "next_action": "Add a Fly.io token when a project should deploy outside Vercel.",
+    },
+]
+
+
+def _setup_provider_status(
+    provider_config: dict[str, Any],
+    has_key: bool,
+    env: Optional[dict[str, str]] = None,
+) -> dict[str, Any]:
+    env_source = env if env is not None else os.environ
+    required_env = list(provider_config["required_env"])
+    missing_env = [name for name in required_env if not env_source.get(name)]
+    env_ready = not missing_env
+
+    if env_ready:
+        status = "connected"
+        source = "environment"
+        next_action = "Ready to use."
+    elif has_key:
+        status = "configured"
+        source = "encrypted_key"
+        next_action = (
+            "Credential is stored. Add required environment metadata or wire provider-specific validation."
+            if missing_env
+            else "Credential is stored and ready for provider validation."
+        )
+    else:
+        status = "missing"
+        source = "none"
+        next_action = provider_config["next_action"]
+
+    return {
+        "provider": provider_config["provider"],
+        "label": provider_config["label"],
+        "required": provider_config["required"],
+        "status": status,
+        "source": source,
+        "has_key": has_key,
+        "required_env": required_env,
+        "missing_env": missing_env,
+        "docs_url": provider_config["docs_url"],
+        "next_action": next_action,
+    }
+
+
+def _setup_status_for_tenant(session: Session, tenant: Tenant) -> SetupStatusResponse:
+    key_providers = {
+        provider
+        for (provider,) in session.query(ApiKey.provider)
+        .filter(ApiKey.tenant_id == tenant.id)
+        .distinct()
+        .all()
+    }
+    providers = [
+        _setup_provider_status(config, config["provider"] in key_providers)
+        for config in SETUP_PROVIDERS
+    ]
+    connected = sum(1 for provider in providers if provider["status"] == "connected")
+    configured = sum(1 for provider in providers if provider["status"] == "configured")
+    missing_required = sum(
+        1
+        for provider in providers
+        if provider["required"] and provider["status"] == "missing"
+    )
+    return SetupStatusResponse(
+        ready=missing_required == 0,
+        connected=connected,
+        configured=configured,
+        missing_required=missing_required,
+        total=len(providers),
+        providers=providers,
+    )
 
 
 app = FastAPI(
@@ -217,6 +350,17 @@ async def get_current_tenant(
 @app.get("/api/health", response_model=HealthResponse)
 async def health():
     return HealthResponse()
+
+
+# ── Setup ──
+
+
+@app.get("/api/setup/status", response_model=SetupStatusResponse)
+async def setup_status(
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(get_current_tenant),
+):
+    return _setup_status_for_tenant(session, tenant)
 
 
 # ── Intent Parser ──
@@ -1222,6 +1366,77 @@ export default function AboutPage() {{
 # ── Projects ──
 
 
+def _create_project_run(
+    session: Session,
+    tenant: Tenant,
+    project: Project,
+    *,
+    run_type: str,
+    status: str,
+    title: str,
+    summary: str = "",
+    log: str = "",
+    steps: Optional[list[dict[str, Any]]] = None,
+    run_metadata: Optional[dict[str, Any]] = None,
+) -> ProjectRun:
+    now = datetime.now(timezone.utc)
+    run = ProjectRun(
+        id=gen_id(),
+        tenant_id=tenant.id,
+        project_id=project.id,
+        run_type=run_type,
+        status=status,
+        title=title,
+        summary=summary,
+        log=log,
+        steps=steps or [],
+        run_metadata=run_metadata or {},
+        started_at=now if status == "running" else None,
+        completed_at=now if status not in {"queued", "running"} else None,
+    )
+    session.add(run)
+    return run
+
+
+def _project_run_status_from_summary(summary: dict[str, Any]) -> str:
+    if summary.get("errors"):
+        return "failed"
+    if summary.get("healthy"):
+        return "succeeded"
+    by_status = summary.get("by_status") or {}
+    if by_status and set(by_status.keys()) == {"skipped"}:
+        return "skipped"
+    return "action_required"
+
+
+def _reconciliation_steps(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    steps = []
+    for result in results:
+        steps.append(
+            {
+                "label": result.get("resource_key", "resource"),
+                "status": result.get("status", "unknown"),
+                "detail": result.get("action_taken")
+                or result.get("message")
+                or result.get("error")
+                or "",
+            }
+        )
+    return steps
+
+
+def _reconciliation_summary_text(summary: dict[str, Any]) -> str:
+    by_status = summary.get("by_status") or {}
+    if summary.get("errors"):
+        return f"Reconciliation failed with {len(summary['errors'])} error(s)."
+    if summary.get("healthy"):
+        return "Declared resources are in sync."
+    if not by_status:
+        return "No declared resources were checked."
+    parts = [f"{count} {status}" for status, count in sorted(by_status.items())]
+    return "Resource check completed: " + ", ".join(parts) + "."
+
+
 @app.get("/api/projects", response_model=ProjectListResponse)
 async def list_projects(
     session: Session = Depends(get_session),
@@ -1250,9 +1465,36 @@ async def create_project(
         status="pending",
     )
     session.add(project)
+    _create_project_run(
+        session,
+        tenant,
+        project,
+        run_type="setup",
+        status="succeeded",
+        title="Project created",
+        summary="Project registered in Powerhouse.",
+    )
     session.commit()
     session.refresh(project)
     return ProjectResponse.model_validate(project)
+
+
+@app.get("/api/projects/{project_id}/runs", response_model=List[ProjectRunResponse])
+async def list_project_runs(
+    project_id: str,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(get_current_tenant),
+    limit: int = Query(default=30, le=100),
+):
+    runs = (
+        session.query(ProjectRun)
+        .join(Project)
+        .filter(ProjectRun.project_id == project_id, Project.tenant_id == tenant.id)
+        .order_by(ProjectRun.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+    return [ProjectRunResponse.model_validate(run) for run in runs]
 
 
 @app.get("/api/projects/{project_id}", response_model=ProjectResponse)
@@ -1344,6 +1586,16 @@ async def reconcile_project(
         dry_run=data.dry_run,
     )
     session.add(run)
+    project_run = _create_project_run(
+        session,
+        tenant,
+        project,
+        run_type="reconcile",
+        status="running",
+        title="Reconcile intent",
+        summary="Checking declared resources against provider state.",
+        run_metadata={"dry_run": data.dry_run, "reconciliation_run_id": run.id},
+    )
     session.commit()
 
     try:
@@ -1352,12 +1604,21 @@ async def reconcile_project(
         run.drifts_found = summary.get("by_status", {})
         run.resources_checked = [r["resource_key"] for r in results]
         run.log = _serialize_run_log(results, summary)
+        project_run.status = _project_run_status_from_summary(summary)
+        project_run.summary = _reconciliation_summary_text(summary)
+        project_run.steps = _reconciliation_steps(results)
+        project_run.log = run.log
+        project_run.completed_at = datetime.now(timezone.utc)
         project.status = run.status
         project.updated_at = datetime.now(timezone.utc)
     except Exception as e:
         run.status = "error"
         run.error_message = str(e)[:500]
         run.log = traceback.format_exc()[:1000]
+        project_run.status = "failed"
+        project_run.summary = "Reconciliation failed before completion."
+        project_run.log = run.log
+        project_run.completed_at = datetime.now(timezone.utc)
         project.status = "error"
         project.updated_at = datetime.now(timezone.utc)
 
@@ -1422,6 +1683,16 @@ async def trigger_agent(
         input_spec=data.input_spec,
     )
     session.add(run)
+    project_run = _create_project_run(
+        session,
+        tenant,
+        project,
+        run_type=data.agent_type,
+        status="running",
+        title=f"Run {data.agent_type} agent",
+        summary="Agent job accepted by the control plane.",
+        run_metadata={"agent_run_id": run.id},
+    )
     session.commit()
 
     try:
@@ -1429,10 +1700,18 @@ async def trigger_agent(
         run.status = "failed"
         run.output = output
         run.completed_at = datetime.now(timezone.utc)
+        project_run.status = "failed"
+        project_run.summary = output
+        project_run.log = output
+        project_run.completed_at = run.completed_at
     except Exception:
         run.status = "failed"
         run.log = traceback.format_exc()
         run.completed_at = datetime.now(timezone.utc)
+        project_run.status = "failed"
+        project_run.summary = "Agent run failed before producing output."
+        project_run.log = run.log
+        project_run.completed_at = run.completed_at
 
     session.commit()
     session.refresh(run)

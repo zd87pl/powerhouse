@@ -1,6 +1,12 @@
 """Tests for API safety helpers."""
 
-from services.instill_api.main import _run_reconciliation, _status_from_summary
+from services.instill_api.main import (
+    SETUP_PROVIDERS,
+    _project_run_status_from_summary,
+    _run_reconciliation,
+    _setup_provider_status,
+    _status_from_summary,
+)
 from services.instill_api.secrets import decrypt_secret, encrypt_secret, is_encrypted
 from services.intent_engine.resolvers import ResolverRegistry
 
@@ -25,3 +31,38 @@ def test_secret_encryption_round_trip(monkeypatch):
     assert encrypted != "ghp_example"
     assert is_encrypted(encrypted)
     assert decrypt_secret(encrypted) == "ghp_example"
+
+
+def test_setup_provider_status_distinguishes_env_and_stored_keys():
+    github = next(item for item in SETUP_PROVIDERS if item["provider"] == "github")
+
+    missing = _setup_provider_status(github, has_key=False, env={})
+    configured = _setup_provider_status(github, has_key=True, env={})
+    connected = _setup_provider_status(
+        github,
+        has_key=False,
+        env={"GITHUB_TOKEN": "token", "GITHUB_OWNER": "owner"},
+    )
+
+    assert missing["status"] == "missing"
+    assert configured["status"] == "configured"
+    assert configured["source"] == "encrypted_key"
+    assert connected["status"] == "connected"
+    assert connected["missing_env"] == []
+
+
+def test_project_run_status_preserves_action_required_state():
+    assert _project_run_status_from_summary({"errors": ["boom"]}) == "failed"
+    assert _project_run_status_from_summary({"healthy": True}) == "succeeded"
+    assert (
+        _project_run_status_from_summary(
+            {"healthy": False, "by_status": {"skipped": 2}}
+        )
+        == "skipped"
+    )
+    assert (
+        _project_run_status_from_summary(
+            {"healthy": False, "by_status": {"drifted": 1, "synced": 1}}
+        )
+        == "action_required"
+    )

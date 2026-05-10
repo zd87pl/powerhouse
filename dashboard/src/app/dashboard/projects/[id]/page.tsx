@@ -2,12 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Loader2, Trash2, Play, History, Bot } from "lucide-react";
-import { api, type Project, type ReconciliationRun, type AgentRun } from "@/lib/api";
+import { Activity, ArrowLeft, Loader2, Trash2, Play, History, Bot } from "lucide-react";
+import { api, type Project, type ReconciliationRun, type AgentRun, type ProjectRun } from "@/lib/api";
 import { errorMessage, formatDate, statusColor } from "@/lib/utils";
 import { IntentEditor } from "@/components/intent-editor";
 
-type Tab = "overview" | "reconciliations" | "agents";
+type Tab = "overview" | "progress" | "reconciliations" | "agents";
 
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -18,6 +18,7 @@ export default function ProjectDetailPage() {
   const [activeTab, setActiveTab] = useState<Tab>("overview");
   const [reconciliations, setReconciliations] = useState<ReconciliationRun[]>([]);
   const [agentRuns, setAgentRuns] = useState<AgentRun[]>([]);
+  const [projectRuns, setProjectRuns] = useState<ProjectRun[]>([]);
   const [triggering, setTriggering] = useState(false);
 
   const fetchProject = useCallback(async () => {
@@ -45,13 +46,21 @@ export default function ProjectDetailPage() {
     } catch {}
   }, [id]);
 
+  const fetchProjectRuns = useCallback(async () => {
+    try {
+      const data = await api.projects.runs(id);
+      setProjectRuns(data);
+    } catch {}
+  }, [id]);
+
   useEffect(() => {
     void Promise.resolve().then(() => {
       fetchProject();
+      fetchProjectRuns();
       fetchReconciliations();
       fetchAgentRuns();
     });
-  }, [fetchAgentRuns, fetchProject, fetchReconciliations]);
+  }, [fetchAgentRuns, fetchProject, fetchProjectRuns, fetchReconciliations]);
 
   const handleDelete = async () => {
     if (!confirm("Delete this project?")) return;
@@ -68,6 +77,7 @@ export default function ProjectDetailPage() {
     try {
       await api.projects.triggerAgent(id, agentType, project?.intent_yaml || "");
       fetchAgentRuns();
+      fetchProjectRuns();
     } catch (e: unknown) {
       setError(errorMessage(e));
     } finally {
@@ -95,6 +105,7 @@ export default function ProjectDetailPage() {
 
   const tabs: { key: Tab; label: string; icon: React.ElementType }[] = [
     { key: "overview", label: "Overview", icon: Play },
+    { key: "progress", label: "Progress", icon: Activity },
     { key: "reconciliations", label: "Reconciliations", icon: History },
     { key: "agents", label: "Agents", icon: Bot },
   ];
@@ -148,6 +159,7 @@ export default function ProjectDetailPage() {
               key={tab.key}
               onClick={() => {
                 setActiveTab(tab.key);
+                if (tab.key === "progress") fetchProjectRuns();
                 if (tab.key === "reconciliations") fetchReconciliations();
                 if (tab.key === "agents") fetchAgentRuns();
               }}
@@ -193,12 +205,17 @@ export default function ProjectDetailPage() {
             initialYaml={project.intent_yaml}
             onReconciled={() => {
               fetchProject();
+              fetchProjectRuns();
               fetchReconciliations();
             }}
           />
 
           {/* Stats grid */}
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+            <div className="p-4 bg-slate-900 border border-slate-800 rounded-lg">
+              <p className="text-sm text-slate-500">Timeline Events</p>
+              <p className="text-2xl font-bold text-white mt-1">{projectRuns.length}</p>
+            </div>
             <div className="p-4 bg-slate-900 border border-slate-800 rounded-lg">
               <p className="text-sm text-slate-500">Reconciliations</p>
               <p className="text-2xl font-bold text-white mt-1">{reconciliations.length}</p>
@@ -212,6 +229,53 @@ export default function ProjectDetailPage() {
               <p className="text-2xl font-bold text-white mt-1 capitalize">{project.stack}</p>
             </div>
           </div>
+        </div>
+      )}
+
+      {activeTab === "progress" && (
+        <div className="space-y-4">
+          {projectRuns.length === 0 ? (
+            <p className="text-slate-500 text-center py-12">No project activity has been recorded yet.</p>
+          ) : (
+            projectRuns.map((run) => (
+              <div key={run.id} className="p-5 bg-slate-900 border border-slate-800 rounded-lg">
+                <div className="flex items-start justify-between gap-4 mb-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={`text-xs px-2 py-0.5 rounded-full border ${statusColor(run.status)}`}>
+                        {run.status.replace(/_/g, " ")}
+                      </span>
+                      <span className="text-xs px-2 py-0.5 rounded-full border border-slate-700 bg-slate-800 text-slate-400">
+                        {run.run_type}
+                      </span>
+                    </div>
+                    <h2 className="text-white font-semibold mt-3">{run.title}</h2>
+                    {run.summary && <p className="text-sm text-slate-400 mt-1">{run.summary}</p>}
+                  </div>
+                  <span className="shrink-0 text-xs text-slate-500">{formatDate(run.created_at)}</span>
+                </div>
+
+                {run.steps.length > 0 && (
+                  <div className="mt-4 space-y-2 border-t border-slate-800 pt-4">
+                    {run.steps.slice(0, 6).map((step, index) => (
+                      <div key={`${step.label}-${index}`} className="flex items-start justify-between gap-3 text-sm">
+                        <div className="min-w-0">
+                          <p className="font-mono text-slate-300">{step.label}</p>
+                          {step.detail && <p className="mt-0.5 text-xs text-slate-500 line-clamp-2">{step.detail}</p>}
+                        </div>
+                        <span className={`shrink-0 rounded-full border px-2 py-0.5 text-xs ${statusColor(step.status)}`}>
+                          {step.status}
+                        </span>
+                      </div>
+                    ))}
+                    {run.steps.length > 6 && (
+                      <p className="text-xs text-slate-500">+{run.steps.length - 6} more steps</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))
+          )}
         </div>
       )}
 
