@@ -899,8 +899,11 @@ export default function AboutPage() {{
         )
         github_url = f"https://github.com/zd87pl/{project_slug}"
 
-        # 3c. Deploy to Vercel via git integration
-        # Create Vercel project linked to GitHub repo
+        # 3c. Deploy to Vercel
+        deploy_url = ""
+        vercel_deploy_ok = False
+
+        # Try Vercel git integration
         vercel_headers = {
             "Authorization": f"Bearer {vercel_token}",
             "Content-Type": "application/json",
@@ -922,39 +925,32 @@ export default function AboutPage() {{
             vc_resp = urlreq.urlopen(vc_req)
             vc_data = json_mod.loads(vc_resp.read())
             vercel_project_id = vc_data.get("id", "")
-            if "error" in vc_data:
-                # Project may already exist — that's OK
-                vercel_project_id = ""
-        except Exception:
-            vercel_project_id = ""
-
-        # Trigger deploy via Vercel git integration
-        deploy_url = ""
-        if vercel_project_id:
-            deploy_body = json_mod.dumps({
-                "name": project_slug,
-                "target": "production",
-                "gitSource": {
-                    "type": "github",
-                    "repo": f"zd87pl/{project_slug}",
-                    "ref": "main",
-                },
-                "projectSettings": {"framework": "nextjs"},
-            }).encode()
-            deploy_req = urlreq.Request(
-                "https://api.vercel.com/v13/deployments",
-                data=deploy_body, headers=vercel_headers, method="POST",
-            )
-            try:
+            if "error" not in vc_data:
+                # Trigger deployment
+                deploy_body = json_mod.dumps({
+                    "name": project_slug,
+                    "target": "production",
+                    "gitSource": {
+                        "type": "github",
+                        "repo": f"zd87pl/{project_slug}",
+                        "ref": "main",
+                    },
+                }).encode()
+                deploy_req = urlreq.Request(
+                    "https://api.vercel.com/v13/deployments",
+                    data=deploy_body, headers=vercel_headers, method="POST",
+                )
                 deploy_resp = urlreq.urlopen(deploy_req)
                 deploy_data = json_mod.loads(deploy_resp.read())
-                deploy_url = f"https://{deploy_data.get('url', project_slug + '.vercel.app')}"
-            except Exception as e:
-                # Fallback: deploy static preview
-                deploy_url = f"https://{project_slug}.vercel.app"
+                got_url = deploy_data.get("url", "")
+                if got_url:
+                    deploy_url = f"https://{got_url}"
+                    vercel_deploy_ok = True
+        except Exception:
+            vercel_deploy_ok = False
 
-        # Fallback: static HTML deploy if git deploy fails
-        if not deploy_url or "error" in str(deploy_url):
+        # Fallback: static HTML deploy
+        if not vercel_deploy_ok:
             # Copy out dir and deploy static HTML
             preview_html = f"""<!DOCTYPE html><html><head><title>{title}</title>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
