@@ -2,10 +2,12 @@
 
 from services.instill_api.main import (
     SETUP_PROVIDERS,
+    _parse_scope_header,
     _project_run_status_from_summary,
     _run_reconciliation,
     _setup_provider_status,
     _status_from_summary,
+    _validation_status,
 )
 from services.instill_api.secrets import decrypt_secret, encrypt_secret, is_encrypted
 from services.intent_engine.resolvers import ResolverRegistry
@@ -66,3 +68,36 @@ def test_project_run_status_preserves_action_required_state():
         )
         == "action_required"
     )
+
+
+def test_validation_status_summarizes_checks():
+    assert _validation_status([], has_credential=False) == "missing"
+    assert (
+        _validation_status(
+            [{"label": "Auth", "status": "failed", "detail": "bad token"}],
+            has_credential=True,
+        )
+        == "invalid"
+    )
+    assert (
+        _validation_status(
+            [{"label": "Scope", "status": "warning", "detail": "limited"}],
+            has_credential=True,
+        )
+        == "action_required"
+    )
+    assert (
+        _validation_status(
+            [{"label": "Auth", "status": "passed", "detail": "ok"}],
+            has_credential=True,
+        )
+        == "valid"
+    )
+
+
+def test_parse_scope_header_deduplicates_and_sorts():
+    assert _parse_scope_header("repo, user, repo,  workflow ") == [
+        "repo",
+        "user",
+        "workflow",
+    ]

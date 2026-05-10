@@ -16,12 +16,16 @@ export function formatDate(date: string | Date): string {
 
 export function statusColor(status: string): string {
   switch (status) {
+    case "valid": return "bg-green-500/20 text-green-400 border-green-500/30"
+    case "passed": return "bg-green-500/20 text-green-400 border-green-500/30"
     case "synced": return "bg-green-500/20 text-green-400 border-green-500/30"
     case "succeeded": return "bg-green-500/20 text-green-400 border-green-500/30"
     case "connected": return "bg-green-500/20 text-green-400 border-green-500/30"
+    case "warning": return "bg-yellow-500/20 text-yellow-400 border-yellow-500/30"
     case "drifted": return "bg-yellow-500/20 text-yellow-400 border-yellow-500/30"
     case "action_required": return "bg-yellow-500/20 text-yellow-400 border-yellow-500/30"
     case "configured": return "bg-yellow-500/20 text-yellow-400 border-yellow-500/30"
+    case "invalid": return "bg-red-500/20 text-red-400 border-red-500/30"
     case "error": return "bg-red-500/20 text-red-400 border-red-500/30"
     case "failed": return "bg-red-500/20 text-red-400 border-red-500/30"
     case "missing": return "bg-red-500/20 text-red-400 border-red-500/30"
