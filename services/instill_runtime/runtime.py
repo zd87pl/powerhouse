@@ -21,7 +21,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Callable, Coroutine
+from typing import Callable, Coroutine
 
 from ..shared import EventBus, Event, EventPriority, get_event_bus
 from ..shared import EpisodicMemory, get_memory
@@ -33,28 +33,31 @@ logger = logging.getLogger(__name__)
 
 class AgentState(str, Enum):
     """Possible lifecycle states of an agent."""
-    IDLE = "idle"          # Created, not yet started
-    RUNNING = "running"    # Actively executing a task
+
+    IDLE = "idle"  # Created, not yet started
+    RUNNING = "running"  # Actively executing a task
     SLEEPING = "sleeping"  # Paused, waiting for trigger
-    ERROR = "error"        # Hit an exception, needs intervention
+    ERROR = "error"  # Hit an exception, needs intervention
     TERMINATED = "terminated"  # Done, cleaned up
 
 
 @dataclass
 class AgentConfig:
     """Configuration for an agent instance."""
-    max_iterations: int = 10            # Max reasoning loops per task
-    max_tokens_per_call: int = 8000     # Truncate prompts above this
-    timeout_seconds: int = 300          # Max wall-clock time per task
-    retry_on_error: bool = True         # Retry once on failure
-    cost_budget_usd: float = 1.0        # Max spend per task
-    model: str = ""                     # Override default routing
+
+    max_iterations: int = 10  # Max reasoning loops per task
+    max_tokens_per_call: int = 8000  # Truncate prompts above this
+    timeout_seconds: int = 300  # Max wall-clock time per task
+    retry_on_error: bool = True  # Retry once on failure
+    cost_budget_usd: float = 1.0  # Max spend per task
+    model: str = ""  # Override default routing
     subscribe_to: list[str] = field(default_factory=list)  # Event types to listen for
 
 
 @dataclass
 class TaskResult:
     """Result of an agent task execution."""
+
     task_id: str
     agent_id: str
     status: str  # "completed", "failed", "timeout", "cancelled"
@@ -69,7 +72,7 @@ class TaskResult:
 class AgentKernel:
     """
     The runtime for a single agent.
-    
+
     Handles lifecycle, memory, event subscriptions, and task execution.
     """
 
@@ -105,12 +108,14 @@ class AgentKernel:
             self._bus.subscribe(event_type, self._on_event)
 
         # Announce our existence
-        await self._bus.emit_nowait(Event(
-            event_type="agent.started",
-            payload={"agent_id": self.agent_id, "agent_type": self.agent_type},
-            source=self.agent_id,
-            priority=EventPriority.LOW,
-        ))
+        await self._bus.emit_nowait(
+            Event(
+                event_type="agent.started",
+                payload={"agent_id": self.agent_id, "agent_type": self.agent_type},
+                source=self.agent_id,
+                priority=EventPriority.LOW,
+            )
+        )
 
         # Remember this startup in episodic memory
         await self._memory.remember(
@@ -125,7 +130,7 @@ class AgentKernel:
     async def run(self, task: str, context: dict | None = None) -> TaskResult:
         """
         Execute a task.
-        
+
         The agent will:
         1. Recall similar past tasks from memory
         2. Route to appropriate model based on complexity
@@ -134,8 +139,10 @@ class AgentKernel:
         """
         if self.state == AgentState.TERMINATED:
             return TaskResult(
-                task_id="", agent_id=self.agent_id,
-                status="failed", error="Agent is terminated"
+                task_id="",
+                agent_id=self.agent_id,
+                status="failed",
+                error="Agent is terminated",
             )
 
         task_id = uuid.uuid4().hex[:12]
@@ -145,13 +152,17 @@ class AgentKernel:
 
         logger.info("Agent %s running task: %s", self.agent_id, task[:80])
 
-        with self._tracer.span("agent.run", {"task_id": task_id, "agent_id": self.agent_id}):
+        with self._tracer.span(
+            "agent.run", {"task_id": task_id, "agent_id": self.agent_id}
+        ):
             try:
                 # Step 1: Recall similar past experiences
                 memories = await self._memory.recall(
                     query=task, agent_id=self.agent_id, limit=3
                 )
-                memory_context = "\n".join([m.content for m in memories]) if memories else ""
+                memory_context = (
+                    "\n".join([m.content for m in memories]) if memories else ""
+                )
 
                 # Step 2: Route to appropriate model
                 complexity = self._estimate_complexity(task)
@@ -160,20 +171,28 @@ class AgentKernel:
                 )
 
                 # Step 3: Announce task start
-                await self._bus.emit_nowait(Event(
-                    event_type="agent.task_started",
-                    payload={
-                        "task_id": task_id, "agent_id": self.agent_id,
-                        "task": task[:200], "model": model,
-                    },
-                    source=self.agent_id,
-                ))
+                await self._bus.emit_nowait(
+                    Event(
+                        event_type="agent.task_started",
+                        payload={
+                            "task_id": task_id,
+                            "agent_id": self.agent_id,
+                            "task": task[:200],
+                            "model": model,
+                        },
+                        source=self.agent_id,
+                    )
+                )
 
                 # Step 4: Execute (or simulate if no handler attached)
                 if self._task_handler:
                     output = await asyncio.wait_for(
-                        self._task_handler(task=task, context=context, model=model,
-                                          memory_context=memory_context),
+                        self._task_handler(
+                            task=task,
+                            context=context,
+                            model=model,
+                            memory_context=memory_context,
+                        ),
                         timeout=self.config.timeout_seconds,
                     )
                 else:
@@ -183,8 +202,12 @@ class AgentKernel:
                         output += f"Relevant memories: {len(memories)} found\n"
                     output += "No task handler attached — attach one with kernel.on_task(handler)"
 
-                duration_ms = (datetime.now(timezone.utc) - started).total_seconds() * 1000
-                cost = self._router.estimate_cost(model, len(task) // 4, len(output) // 4)
+                duration_ms = (
+                    datetime.now(timezone.utc) - started
+                ).total_seconds() * 1000
+                cost = self._router.estimate_cost(
+                    model, len(task) // 4, len(output) // 4
+                )
                 self._stats["total_cost_usd"] += cost
                 self._stats["tasks_completed"] += 1
 
@@ -194,37 +217,55 @@ class AgentKernel:
                     memory_type="action",
                     content=f"Completed: {task[:200]}",
                     metadata={
-                        "task_id": task_id, "model": model, "cost_usd": cost,
-                        "duration_ms": duration_ms, "iterations": iterations,
+                        "task_id": task_id,
+                        "model": model,
+                        "cost_usd": cost,
+                        "duration_ms": duration_ms,
+                        "iterations": iterations,
                     },
                 )
 
                 self.state = AgentState.IDLE
 
-                await self._bus.emit_nowait(Event(
-                    event_type="agent.task_completed",
-                    payload={"task_id": task_id, "agent_id": self.agent_id, "cost_usd": cost},
-                    source=self.agent_id,
-                ))
+                await self._bus.emit_nowait(
+                    Event(
+                        event_type="agent.task_completed",
+                        payload={
+                            "task_id": task_id,
+                            "agent_id": self.agent_id,
+                            "cost_usd": cost,
+                        },
+                        source=self.agent_id,
+                    )
+                )
 
                 return TaskResult(
-                    task_id=task_id, agent_id=self.agent_id,
-                    status="completed", output=output,
-                    iterations=iterations, cost_usd=cost,
-                    duration_ms=duration_ms, memory_entries=1,
+                    task_id=task_id,
+                    agent_id=self.agent_id,
+                    status="completed",
+                    output=output,
+                    iterations=iterations,
+                    cost_usd=cost,
+                    duration_ms=duration_ms,
+                    memory_entries=1,
                 )
 
             except asyncio.TimeoutError:
                 self.state = AgentState.ERROR
-                duration_ms = (datetime.now(timezone.utc) - started).total_seconds() * 1000
+                duration_ms = (
+                    datetime.now(timezone.utc) - started
+                ).total_seconds() * 1000
                 await self._memory.remember(
-                    agent_id=self.agent_id, memory_type="error",
+                    agent_id=self.agent_id,
+                    memory_type="error",
                     content=f"Timeout: {task[:200]}",
                     metadata={"task_id": task_id, "duration_ms": duration_ms},
                 )
                 return TaskResult(
-                    task_id=task_id, agent_id=self.agent_id,
-                    status="timeout", error=f"Task exceeded {self.config.timeout_seconds}s",
+                    task_id=task_id,
+                    agent_id=self.agent_id,
+                    status="timeout",
+                    error=f"Task exceeded {self.config.timeout_seconds}s",
                     duration_ms=duration_ms,
                 )
 
@@ -232,24 +273,29 @@ class AgentKernel:
                 self.state = AgentState.ERROR
                 self._stats["tasks_failed"] += 1
                 await self._memory.remember(
-                    agent_id=self.agent_id, memory_type="error",
+                    agent_id=self.agent_id,
+                    memory_type="error",
                     content=f"Error: {str(e)[:500]}",
                     metadata={"task_id": task_id, "task": task[:200]},
                 )
                 logger.exception("Agent %s task failed", self.agent_id)
                 return TaskResult(
-                    task_id=task_id, agent_id=self.agent_id,
-                    status="failed", error=str(e)[:500],
+                    task_id=task_id,
+                    agent_id=self.agent_id,
+                    status="failed",
+                    error=str(e)[:500],
                 )
 
     async def sleep(self) -> None:
         """Pause the agent — it will wake on subscribed events."""
         self.state = AgentState.SLEEPING
-        await self._bus.emit_nowait(Event(
-            event_type="agent.sleeping",
-            payload={"agent_id": self.agent_id},
-            source=self.agent_id,
-        ))
+        await self._bus.emit_nowait(
+            Event(
+                event_type="agent.sleeping",
+                payload={"agent_id": self.agent_id},
+                source=self.agent_id,
+            )
+        )
         logger.info("Agent %s sleeping", self.agent_id)
 
     async def wake(self) -> None:
@@ -262,11 +308,13 @@ class AgentKernel:
         self.state = AgentState.TERMINATED
         for event_type in self.config.subscribe_to:
             self._bus.unsubscribe(event_type, self._on_event)
-        await self._bus.emit_nowait(Event(
-            event_type="agent.terminated",
-            payload={"agent_id": self.agent_id, "stats": self._stats},
-            source=self.agent_id,
-        ))
+        await self._bus.emit_nowait(
+            Event(
+                event_type="agent.terminated",
+                payload={"agent_id": self.agent_id, "stats": self._stats},
+                source=self.agent_id,
+            )
+        )
         logger.info("Agent %s terminated. Stats: %s", self.agent_id, self._stats)
 
     def on_task(self, handler: Callable[..., Coroutine]) -> None:

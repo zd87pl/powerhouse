@@ -5,6 +5,7 @@ import traceback
 import subprocess
 import tempfile
 import shutil
+import re
 import httpx
 import jwt
 from datetime import datetime, timezone
@@ -71,7 +72,7 @@ def _get_jwks_client() -> jwt.PyJWKClient:
 
 async def get_clerk_user_id(request: Request) -> Optional[str]:
     """Extract Clerk user ID from JWT in Authorization header.
-    
+
     Returns None if no auth header present (dev fallback).
     Raises HTTPException on invalid/expired tokens.
     """
@@ -147,12 +148,14 @@ async def get_current_tenant(
 
 # ── Health ──
 
+
 @app.get("/api/health", response_model=HealthResponse)
 async def health():
     return HealthResponse()
 
 
 # ── Intent Parser ──
+
 
 @app.post("/parse", response_model=ParseResponse)
 async def parse_intent(data: ParseRequest):
@@ -207,7 +210,7 @@ Rules:
             content = body["choices"][0]["message"]["content"]
 
             # Extract JSON from the response (handle markdown code blocks)
-            json_match = re.search(r'\{[\s\S]*\}', content)
+            json_match = re.search(r"\{[\s\S]*\}", content)
             if json_match:
                 parsed = json.loads(json_match.group(0))
                 return ParseResponse(
@@ -255,7 +258,10 @@ def _fallback_parse(description: str) -> ParseResponse:
     tools = []
     required_keys = ["GitHub", "Vercel"]
 
-    if any(w in desc_lower for w in ["store", "shop", "ecommerce", "e-commerce", "fashion", "clothing"]):
+    if any(
+        w in desc_lower
+        for w in ["store", "shop", "ecommerce", "e-commerce", "fashion", "clothing"]
+    ):
         features.append("ecommerce-storefront")
         tools.append("Stripe")
         required_keys.append("Stripe")
@@ -267,7 +273,9 @@ def _fallback_parse(description: str) -> ParseResponse:
     if any(w in desc_lower for w in ["plus-size", "plus size", "xl", "xxl"]):
         features.append("size-guide-xl-6xl")
 
-    if any(w in desc_lower for w in ["free shipping", "darmowa dostawa", "free delivery"]):
+    if any(
+        w in desc_lower for w in ["free shipping", "darmowa dostawa", "free delivery"]
+    ):
         features.append("free-shipping-threshold")
 
     if any(w in desc_lower for w in ["blog", "content", "newsletter"]):
@@ -285,7 +293,9 @@ def _fallback_parse(description: str) -> ParseResponse:
         tools.append("Shopify")
         required_keys.append("Shopify")
 
-    if any(w in desc_lower for w in ["dropshipping", "banggood", "aliexpress", "supplier"]):
+    if any(
+        w in desc_lower for w in ["dropshipping", "banggood", "aliexpress", "supplier"]
+    ):
         features.append("dropship-integration")
 
     if any(w in desc_lower for w in ["ai", "ml", "machine learning"]):
@@ -293,17 +303,62 @@ def _fallback_parse(description: str) -> ParseResponse:
         required_keys.append("OpenAI")
 
     # Generate project slug
-    words = re.findall(r'[a-z]+', desc_lower)
-    stop_words = {'a', 'an', 'the', 'i', 'me', 'my', 'we', 'our', 'you', 'your',
-                  'build', 'create', 'make', 'want', 'need', 'with', 'for', 'and',
-                  'or', 'but', 'in', 'on', 'at', 'to', 'of', 'is', 'it', 'that',
-                  'this', 'be', 'have', 'has', 'do', 'does', 'from', 'by', 'as'}
+    words = re.findall(r"[a-z]+", desc_lower)
+    stop_words = {
+        "a",
+        "an",
+        "the",
+        "i",
+        "me",
+        "my",
+        "we",
+        "our",
+        "you",
+        "your",
+        "build",
+        "create",
+        "make",
+        "want",
+        "need",
+        "with",
+        "for",
+        "and",
+        "or",
+        "but",
+        "in",
+        "on",
+        "at",
+        "to",
+        "of",
+        "is",
+        "it",
+        "that",
+        "this",
+        "be",
+        "have",
+        "has",
+        "do",
+        "does",
+        "from",
+        "by",
+        "as",
+    }
     meaningful = [w for w in words if w not in stop_words and len(w) > 2][:3]
     project = "-".join(meaningful) if meaningful else "my-project"
 
     # Generate explanation
-    stack_name = {"nextjs": "Next.js", "fastapi": "FastAPI", "remix": "Remix", "wordpress": "WordPress", "astro": "Astro"}.get(stack, stack)
-    feature_desc = ", ".join(f.replace("-", " ") for f in features) if features else "a web application"
+    stack_name = {
+        "nextjs": "Next.js",
+        "fastapi": "FastAPI",
+        "remix": "Remix",
+        "wordpress": "WordPress",
+        "astro": "Astro",
+    }.get(stack, stack)
+    feature_desc = (
+        ", ".join(f.replace("-", " ") for f in features)
+        if features
+        else "a web application"
+    )
     explanation = (
         f"Got it. I'll set up {project} — a {stack_name} application with {feature_desc}. "
         f"Targeting the {market} market. Monitoring and CI/CD included."
@@ -407,7 +462,6 @@ async def build_project(data: BuildRequest = None, raw_data: Request = None):
     Accepts either JSON body (BuildRequest) or a parsed intent from /parse.
     Returns the live Vercel URL once deployed.
     """
-    import json as json_mod
 
     # Handle both direct BuildRequest and raw JSON (from landing page)
     if data is None and raw_data is not None:
@@ -507,8 +561,15 @@ async def build_project(data: BuildRequest = None, raw_data: Request = None):
 
         # Deploy to Vercel
         deploy_result = subprocess.run(
-            ["vercel", "deploy", project_dir, "--prod", "--yes",
-             "--token", vercel_token],
+            [
+                "vercel",
+                "deploy",
+                project_dir,
+                "--prod",
+                "--yes",
+                "--token",
+                vercel_token,
+            ],
             capture_output=True,
             text=True,
             timeout=60,
@@ -528,11 +589,16 @@ async def build_project(data: BuildRequest = None, raw_data: Request = None):
                 break
         if not deploy_url:
             import re as regex
+
             url_match = regex.search(
                 r"https://[a-zA-Z0-9-]+\.vercel\.app",
                 deploy_result.stdout + deploy_result.stderr,
             )
-            deploy_url = url_match.group(0) if url_match else f"https://{project_slug}.vercel.app"
+            deploy_url = (
+                url_match.group(0)
+                if url_match
+                else f"https://{project_slug}.vercel.app"
+            )
 
         return BuildResponse(
             project=project_slug,
@@ -699,6 +765,7 @@ export function Hero({ title, subtitle, features }: { title: string; subtitle: s
 def _generate_page_tsx(title: str, subtitle: str, features: list) -> str:
     """Generate a page.tsx for any route."""
     import json as _json
+
     return f"""import {{ Hero }} from "@/components/Hero";
 
 export default function HomePage() {{
@@ -751,7 +818,7 @@ async def swarm_build(data: BuildRequest):
     Phase 2 (Coder): Generate full Next.js project with components/pages
     Phase 3 (DevOps): Push to GitHub → deploy to Vercel
     """
-    import json as json_mod, re as regex
+    import json as json_mod
 
     project_slug = data.project.strip().lower().replace(" ", "-")
     features = data.features if data.features else ["responsive", "modern-ui"]
@@ -798,15 +865,23 @@ async def swarm_build(data: BuildRequest):
             f.write(_SWARM_GLOBALS_CSS)
 
         # Layout
-        layout = _SWARM_LAYOUT_TSX.replace("{{TITLE}}", title).replace("{{DESCRIPTION}}", description)
+        layout = _SWARM_LAYOUT_TSX.replace("{{TITLE}}", title).replace(
+            "{{DESCRIPTION}}", description
+        )
         with open(os.path.join(project_dir, "src", "app", "layout.tsx"), "w") as f:
             f.write(layout)
 
         # Components
-        header = _SWARM_HEADER_TSX.replace("{{NAV_JSON}}", json_mod.dumps(nav_items)).replace("{{PROJECT_TITLE}}", title)
-        with open(os.path.join(project_dir, "src", "components", "Header.tsx"), "w") as f:
+        header = _SWARM_HEADER_TSX.replace(
+            "{{NAV_JSON}}", json_mod.dumps(nav_items)
+        ).replace("{{PROJECT_TITLE}}", title)
+        with open(
+            os.path.join(project_dir, "src", "components", "Header.tsx"), "w"
+        ) as f:
             f.write(header)
-        with open(os.path.join(project_dir, "src", "components", "Footer.tsx"), "w") as f:
+        with open(
+            os.path.join(project_dir, "src", "components", "Footer.tsx"), "w"
+        ) as f:
             f.write(_SWARM_FOOTER_TSX)
         with open(os.path.join(project_dir, "src", "components", "Hero.tsx"), "w") as f:
             f.write(_SWARM_HERO_TSX)
@@ -814,7 +889,9 @@ async def swarm_build(data: BuildRequest):
         # Pages
         with open(os.path.join(project_dir, "src", "app", "page.tsx"), "w") as f:
             f.write(_generate_page_tsx(title, subtitle, features))
-        with open(os.path.join(project_dir, "src", "app", "features", "page.tsx"), "w") as f:
+        with open(
+            os.path.join(project_dir, "src", "app", "features", "page.tsx"), "w"
+        ) as f:
             f.write(_generate_features_page_tsx(title, features))
 
         # About page
@@ -842,7 +919,9 @@ export default function AboutPage() {{
   );
 }}
 """
-        with open(os.path.join(project_dir, "src", "app", "about", "page.tsx"), "w") as f:
+        with open(
+            os.path.join(project_dir, "src", "app", "about", "page.tsx"), "w"
+        ) as f:
             f.write(about_tsx)
 
         # ====================
@@ -851,6 +930,7 @@ export default function AboutPage() {{
 
         # 3a. Create GitHub repo
         import urllib.request as urlreq
+
         gh_api = "https://api.github.com"
         gh_headers = {
             "Authorization": f"Bearer {github_token}",
@@ -869,33 +949,67 @@ export default function AboutPage() {{
             repo_exists = False
 
         if not repo_exists:
-            create_body = json_mod.dumps({
-                "name": project_slug,
-                "description": f"{title} — built by Powerhouse Agent Swarm. {subtitle}",
-                "private": False,
-                "auto_init": False,
-            }).encode()
+            create_body = json_mod.dumps(
+                {
+                    "name": project_slug,
+                    "description": f"{title} — built by Powerhouse Agent Swarm. {subtitle}",
+                    "private": False,
+                    "auto_init": False,
+                }
+            ).encode()
             create_req = urlreq.Request(
-                f"{gh_api}/user/repos", data=create_body, headers=gh_headers, method="POST"
+                f"{gh_api}/user/repos",
+                data=create_body,
+                headers=gh_headers,
+                method="POST",
             )
             try:
                 urlreq.urlopen(create_req)
             except Exception as e:
-                raise HTTPException(status_code=500, detail=f"GitHub repo creation failed: {e}")
+                raise HTTPException(
+                    status_code=500, detail=f"GitHub repo creation failed: {e}"
+                )
 
         # 3b. Git init + push
-        subprocess.run(["git", "init"], cwd=project_dir, capture_output=True, timeout=10)
-        subprocess.run(["git", "config", "user.email", "ziggy@powerhouse.dev"], cwd=project_dir, capture_output=True)
-        subprocess.run(["git", "config", "user.name", "Powerhouse Agent Swarm"], cwd=project_dir, capture_output=True)
-        subprocess.run(["git", "checkout", "-b", "main"], cwd=project_dir, capture_output=True)
-        subprocess.run(["git", "add", "-A"], cwd=project_dir, capture_output=True, timeout=10)
-        subprocess.run(["git", "commit", "-m", f"⚡ Initial scaffold by Powerhouse Agent Swarm\n\nProject: {title}\nFeatures: {', '.join(features)}\nMarket: {market}"], cwd=project_dir, capture_output=True, timeout=10)
+        subprocess.run(
+            ["git", "init"], cwd=project_dir, capture_output=True, timeout=10
+        )
+        subprocess.run(
+            ["git", "config", "user.email", "ziggy@powerhouse.dev"],
+            cwd=project_dir,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Powerhouse Agent Swarm"],
+            cwd=project_dir,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "checkout", "-b", "main"], cwd=project_dir, capture_output=True
+        )
+        subprocess.run(
+            ["git", "add", "-A"], cwd=project_dir, capture_output=True, timeout=10
+        )
+        subprocess.run(
+            [
+                "git",
+                "commit",
+                "-m",
+                f"⚡ Initial scaffold by Powerhouse Agent Swarm\n\nProject: {title}\nFeatures: {', '.join(features)}\nMarket: {market}",
+            ],
+            cwd=project_dir,
+            capture_output=True,
+            timeout=10,
+        )
 
         # Push
         repo_url = f"https://zd87pl:{github_token}@github.com/zd87pl/{project_slug}.git"
-        push_result = subprocess.run(
+        subprocess.run(
             ["git", "push", "-u", repo_url, "main"],
-            cwd=project_dir, capture_output=True, text=True, timeout=30,
+            cwd=project_dir,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         github_url = f"https://github.com/zd87pl/{project_slug}"
 
@@ -908,37 +1022,44 @@ export default function AboutPage() {{
             "Authorization": f"Bearer {vercel_token}",
             "Content-Type": "application/json",
         }
-        vc_body = json_mod.dumps({
-            "name": project_slug,
-            "framework": "nextjs",
-            "gitRepository": {
-                "repo": f"zd87pl/{project_slug}",
-                "type": "github",
-            },
-            "ssoProtection": None,
-        }).encode()
+        vc_body = json_mod.dumps(
+            {
+                "name": project_slug,
+                "framework": "nextjs",
+                "gitRepository": {
+                    "repo": f"zd87pl/{project_slug}",
+                    "type": "github",
+                },
+                "ssoProtection": None,
+            }
+        ).encode()
         vc_req = urlreq.Request(
             "https://api.vercel.com/v9/projects",
-            data=vc_body, headers=vercel_headers, method="POST",
+            data=vc_body,
+            headers=vercel_headers,
+            method="POST",
         )
         try:
             vc_resp = urlreq.urlopen(vc_req)
             vc_data = json_mod.loads(vc_resp.read())
-            vercel_project_id = vc_data.get("id", "")
             if "error" not in vc_data:
                 # Trigger deployment
-                deploy_body = json_mod.dumps({
-                    "name": project_slug,
-                    "target": "production",
-                    "gitSource": {
-                        "type": "github",
-                        "repo": f"zd87pl/{project_slug}",
-                        "ref": "main",
-                    },
-                }).encode()
+                deploy_body = json_mod.dumps(
+                    {
+                        "name": project_slug,
+                        "target": "production",
+                        "gitSource": {
+                            "type": "github",
+                            "repo": f"zd87pl/{project_slug}",
+                            "ref": "main",
+                        },
+                    }
+                ).encode()
                 deploy_req = urlreq.Request(
                     "https://api.vercel.com/v13/deployments",
-                    data=deploy_body, headers=vercel_headers, method="POST",
+                    data=deploy_body,
+                    headers=vercel_headers,
+                    method="POST",
                 )
                 deploy_resp = urlreq.urlopen(deploy_req)
                 deploy_data = json_mod.loads(deploy_resp.read())
@@ -964,7 +1085,7 @@ export default function AboutPage() {{
 </div>
 <div class="bg-[#13131a] border border-[#1e1e2e] rounded-2xl p-6 max-w-md w-full">
   <h2 class="text-sm font-semibold mb-3">✨ Features</h2>
-  <ul class="space-y-2">{"".join(f"<li class='text-sm text-[#71717a] flex items-center gap-2'><span class='text-[#a78bfa]'>▸</span> {f.replace('-',' ').title()}</li>" for f in features[:8])}</ul>
+  <ul class="space-y-2">{"".join(f"<li class='text-sm text-[#71717a] flex items-center gap-2'><span class='text-[#a78bfa]'>▸</span> {f.replace('-', ' ').title()}</li>" for f in features[:8])}</ul>
 </div>
 <p class="text-xs text-[#71717a] mt-8">Built with <a href="https://powerhouse.dev" class="text-[#a78bfa] hover:underline">Powerhouse Agent Swarm</a> — Architect → Coder → DevOps</p>
 </body></html>"""
@@ -974,8 +1095,18 @@ export default function AboutPage() {{
                 f.write(preview_html)
 
             deploy_result = subprocess.run(
-                ["vercel", "deploy", preview_dir, "--prod", "--yes", "--token", vercel_token],
-                capture_output=True, text=True, timeout=60,
+                [
+                    "vercel",
+                    "deploy",
+                    preview_dir,
+                    "--prod",
+                    "--yes",
+                    "--token",
+                    vercel_token,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=60,
             )
             for line in deploy_result.stdout.split("\n"):
                 if line.strip().startswith("https://") and "vercel.app" in line:
@@ -1002,6 +1133,7 @@ export default function AboutPage() {{
 
 
 # ── Projects ──
+
 
 @app.get("/api/projects", response_model=ProjectListResponse)
 async def list_projects(
@@ -1042,9 +1174,11 @@ async def get_project(
     session: Session = Depends(get_session),
     tenant: Tenant = Depends(get_current_tenant),
 ):
-    project = session.query(Project).filter(
-        Project.id == project_id, Project.tenant_id == tenant.id
-    ).first()
+    project = (
+        session.query(Project)
+        .filter(Project.id == project_id, Project.tenant_id == tenant.id)
+        .first()
+    )
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     return ProjectResponse.model_validate(project)
@@ -1057,9 +1191,11 @@ async def update_project(
     session: Session = Depends(get_session),
     tenant: Tenant = Depends(get_current_tenant),
 ):
-    project = session.query(Project).filter(
-        Project.id == project_id, Project.tenant_id == tenant.id
-    ).first()
+    project = (
+        session.query(Project)
+        .filter(Project.id == project_id, Project.tenant_id == tenant.id)
+        .first()
+    )
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     if data.name is not None:
@@ -1080,9 +1216,11 @@ async def delete_project(
     session: Session = Depends(get_session),
     tenant: Tenant = Depends(get_current_tenant),
 ):
-    project = session.query(Project).filter(
-        Project.id == project_id, Project.tenant_id == tenant.id
-    ).first()
+    project = (
+        session.query(Project)
+        .filter(Project.id == project_id, Project.tenant_id == tenant.id)
+        .first()
+    )
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     session.delete(project)
@@ -1091,16 +1229,21 @@ async def delete_project(
 
 # ── Reconciliation ──
 
-@app.post("/api/projects/{project_id}/reconcile", response_model=ReconciliationRunResponse)
+
+@app.post(
+    "/api/projects/{project_id}/reconcile", response_model=ReconciliationRunResponse
+)
 async def reconcile_project(
     project_id: str,
     data: ReconcileRequest = ReconcileRequest(),
     session: Session = Depends(get_session),
     tenant: Tenant = Depends(get_current_tenant),
 ):
-    project = session.query(Project).filter(
-        Project.id == project_id, Project.tenant_id == tenant.id
-    ).first()
+    project = (
+        session.query(Project)
+        .filter(Project.id == project_id, Project.tenant_id == tenant.id)
+        .first()
+    )
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
@@ -1137,7 +1280,10 @@ async def reconcile_project(
         raise HTTPException(status_code=500, detail=f"Serialization error: {str(e)}")
 
 
-@app.get("/api/projects/{project_id}/reconciliations", response_model=List[ReconciliationRunResponse])
+@app.get(
+    "/api/projects/{project_id}/reconciliations",
+    response_model=List[ReconciliationRunResponse],
+)
 async def list_reconciliations(
     project_id: str,
     session: Session = Depends(get_session),
@@ -1156,16 +1302,23 @@ async def list_reconciliations(
 
 # ── Agents ──
 
-@app.post("/api/projects/{project_id}/agents", response_model=AgentRunResponse, status_code=201)
+
+@app.post(
+    "/api/projects/{project_id}/agents",
+    response_model=AgentRunResponse,
+    status_code=201,
+)
 async def trigger_agent(
     project_id: str,
     data: AgentRunRequest,
     session: Session = Depends(get_session),
     tenant: Tenant = Depends(get_current_tenant),
 ):
-    project = session.query(Project).filter(
-        Project.id == project_id, Project.tenant_id == tenant.id
-    ).first()
+    project = (
+        session.query(Project)
+        .filter(Project.id == project_id, Project.tenant_id == tenant.id)
+        .first()
+    )
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
@@ -1184,7 +1337,7 @@ async def trigger_agent(
         run.status = "completed"
         run.output = output
         run.completed_at = datetime.now(timezone.utc)
-    except Exception as e:
+    except Exception:
         run.status = "failed"
         run.log = traceback.format_exc()
         run.completed_at = datetime.now(timezone.utc)
@@ -1212,6 +1365,7 @@ async def list_agent_runs(
 
 
 # ── API Keys ──
+
 
 @app.get("/api/keys", response_model=List[ApiKeyResponse])
 async def list_api_keys(
@@ -1248,9 +1402,11 @@ async def delete_api_key(
     session: Session = Depends(get_session),
     tenant: Tenant = Depends(get_current_tenant),
 ):
-    key = session.query(ApiKey).filter(
-        ApiKey.id == key_id, ApiKey.tenant_id == tenant.id
-    ).first()
+    key = (
+        session.query(ApiKey)
+        .filter(ApiKey.id == key_id, ApiKey.tenant_id == tenant.id)
+        .first()
+    )
     if not key:
         raise HTTPException(status_code=404, detail="API key not found")
     session.delete(key)
@@ -1259,12 +1415,12 @@ async def delete_api_key(
 
 # ── Internal: reconciliation logic ──
 
+
 def _run_reconciliation(intent_yaml: str, dry_run: bool = False):
     """Parse intent YAML and simulate reconciliation (self-contained, no external imports)."""
     import yaml
 
     data = yaml.safe_load(intent_yaml) if intent_yaml else {}
-    project_name = data.get("project", "unknown")
 
     resources = ["github_repo"]
 
@@ -1290,7 +1446,10 @@ def _run_reconciliation(intent_yaml: str, dry_run: bool = False):
     # Try to use the real intent engine if available
     try:
         import sys
-        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+        base_dir = os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
         if base_dir not in sys.path:
             sys.path.insert(0, base_dir)
         from services.intent_engine.schema import IntentFile
@@ -1346,14 +1505,17 @@ def _run_agent(agent_type: str, input_spec: str, intent_yaml: str = "") -> str:
 
 # ── Startup ──
 
+
 @app.on_event("startup")
 async def startup():
     """Initialize database on startup."""
     from .models import init_db
+
     init_db(DATABASE_URL)
     print(f"Database initialized: {DATABASE_URL}")
 
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", "8080")))

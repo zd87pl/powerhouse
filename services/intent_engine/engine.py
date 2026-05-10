@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,7 +13,7 @@ from .reconciler import reconcile, reconcile_summary
 from .resolvers import ReconciliationResult
 from .schema import IntentFile, discover_intents, load_intent
 
-DEFAULT_STATE_DIR = Path("/data/powerhouse/intent-engine/state")
+DEFAULT_STATE_DIR = Path(tempfile.gettempdir()) / "intent-engine" / "state"
 
 
 class RunRecord:
@@ -26,24 +27,44 @@ class RunRecord:
 
     def to_dict(self) -> Dict:
         return {
-            "project": self.project, "started_at": self.started_at, "dry_run": self.dry_run,
-            "results": [{"resource_key": r.resource_key, "status": r.status.value,
-                          "action_taken": r.action_taken, "drifts_found": len(r.drifts_found),
-                          "drifts_resolved": r.drifts_resolved, "error_message": r.error_message,
-                          "duration_ms": r.duration_ms} for r in self.results],
-            "summary": self.summary, "error": self.error,
+            "project": self.project,
+            "started_at": self.started_at,
+            "dry_run": self.dry_run,
+            "results": [
+                {
+                    "resource_key": r.resource_key,
+                    "status": r.status.value,
+                    "action_taken": r.action_taken,
+                    "drifts_found": len(r.drifts_found),
+                    "drifts_resolved": r.drifts_resolved,
+                    "error_message": r.error_message,
+                    "duration_ms": r.duration_ms,
+                }
+                for r in self.results
+            ],
+            "summary": self.summary,
+            "error": self.error,
         }
 
 
 class IntentEngine:
-    def __init__(self, root: Optional[Path] = None, state_dir: Optional[Path] = None, dry_run: bool = False):
+    def __init__(
+        self,
+        root: Optional[Path] = None,
+        state_dir: Optional[Path] = None,
+        dry_run: bool = False,
+    ):
         self.root = root or Path.cwd()
         self.state_dir = state_dir or DEFAULT_STATE_DIR
         self.state_dir.mkdir(parents=True, exist_ok=True)
         self.dry_run = dry_run
-        self._on_reconcile: List[Callable[[IntentFile, List[ReconciliationResult]], None]] = []
+        self._on_reconcile: List[
+            Callable[[IntentFile, List[ReconciliationResult]], None]
+        ] = []
 
-    def on_reconcile(self, callback: Callable[[IntentFile, List[ReconciliationResult]], None]) -> None:
+    def on_reconcile(
+        self, callback: Callable[[IntentFile, List[ReconciliationResult]], None]
+    ) -> None:
         self._on_reconcile.append(callback)
 
     def discover(self) -> List[Path]:

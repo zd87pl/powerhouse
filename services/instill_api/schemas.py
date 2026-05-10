@@ -1,12 +1,13 @@
 """Pydantic schemas for API request/response validation."""
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, List, Optional
 
 from pydantic import BaseModel, Field
 
 
 # ── Project ──
+
 
 class ProjectCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=64)
@@ -43,6 +44,7 @@ class ProjectListResponse(BaseModel):
 
 # ── Reconciliation ──
 
+
 class ReconcileRequest(BaseModel):
     dry_run: bool = False
 
@@ -63,6 +65,7 @@ class ReconciliationRunResponse(BaseModel):
 
 
 # ── Agent ──
+
 
 class AgentRunRequest(BaseModel):
     agent_type: str = Field(..., pattern="^(autofix|scaffold|swarm|research)$")
@@ -85,6 +88,7 @@ class AgentRunResponse(BaseModel):
 
 # ── ApiKey ──
 
+
 class ApiKeyCreate(BaseModel):
     provider: str = Field(..., pattern="^(github|vercel|flyio|sentry)$")
     key_name: str
@@ -102,6 +106,7 @@ class ApiKeyResponse(BaseModel):
 
 # ── Health ──
 
+
 class HealthResponse(BaseModel):
     status: str = "ok"
     version: str = "0.1.0"
@@ -109,6 +114,7 @@ class HealthResponse(BaseModel):
 
 
 # ── Intent Parser ──
+
 
 class ParseRequest(BaseModel):
     description: str = Field(..., min_length=1, max_length=2000)
@@ -125,6 +131,7 @@ class ParseResponse(BaseModel):
 
 
 # ── Project Builder ──
+
 
 class BuildRequest(BaseModel):
     project: str = Field(..., min_length=1, max_length=64)

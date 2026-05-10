@@ -10,10 +10,9 @@ The user never chooses where it runs. The system decides.
 """
 
 import logging
-from typing import Optional
 
-from ..shared import ModelRouter, TaskComplexity, RouterCall
-from ..shared import EventBus, Event, EventPriority, get_event_bus
+from ..shared import ModelRouter, TaskComplexity
+from ..shared import EventBus, get_event_bus
 
 logger = logging.getLogger(__name__)
 
@@ -21,14 +20,14 @@ logger = logging.getLogger(__name__)
 class HybridRouter:
     """
     Extends Powerhouse's ModelRouter with local OpenJarvis as a first-class target.
-    
+
     Usage:
         router = HybridRouter(local_available=True)
-        
+
         # Auto-routing
         target, model = router.route("check_margin", TaskComplexity.SIMPLE)
         # → ("local", "qwen3:4b")
-        
+
         target, model = router.route("build_store", TaskComplexity.COMPLEX)
         # → ("cloud", "anthropic/claude-opus-4")
     """
@@ -49,7 +48,9 @@ class HybridRouter:
         self._router = ModelRouter()
         self.local_available = local_available
         self.local_engine = local_engine
-        self.local_model = local_model or self.LOCAL_MODELS.get(local_engine, "qwen3:4b")
+        self.local_model = local_model or self.LOCAL_MODELS.get(
+            local_engine, "qwen3:4b"
+        )
         self._bus: EventBus = get_event_bus()
         self._stats = {
             "local_queries": 0,
@@ -80,7 +81,7 @@ class HybridRouter:
     ) -> tuple[str, str]:
         """
         Route a task to the optimal target and model.
-        
+
         Returns:
             (target, model) — target is "local" or "cloud"
         """
@@ -103,7 +104,9 @@ class HybridRouter:
             # Log routing decision
             logger.info(
                 "HybridRouter: %s/%s → local (%s)",
-                task_type, complexity.value, self.local_model,
+                task_type,
+                complexity.value,
+                self.local_model,
             )
             return ("local", self.local_model)
 
@@ -113,13 +116,19 @@ class HybridRouter:
 
         # Estimate cost savings vs. always-cloud
         cloud_cost = self._router.MODEL_COSTS.get(model, 5.0)
-        self._stats["total_cost_saved_usd"] += cloud_cost if self.local_available and complexity in (
-            TaskComplexity.TRIVIAL, TaskComplexity.SIMPLE
-        ) else 0
+        self._stats["total_cost_saved_usd"] += (
+            cloud_cost
+            if self.local_available
+            and complexity in (TaskComplexity.TRIVIAL, TaskComplexity.SIMPLE)
+            else 0
+        )
 
         logger.info(
             "HybridRouter: %s/%s → cloud (%s, $%.4f/1M)",
-            task_type, complexity.value, model, cloud_cost,
+            task_type,
+            complexity.value,
+            model,
+            cloud_cost,
         )
         return ("cloud", model)
 
@@ -155,13 +164,16 @@ class HybridRouter:
             }
         ]
         if self.local_available:
-            targets.insert(0, {
-                "target": "local",
-                "available": True,
-                "model": self.local_model,
-                "cost": "$0.00",
-                "latency": "0.1-1s",
-                "private": True,
-                "offline": True,
-            })
+            targets.insert(
+                0,
+                {
+                    "target": "local",
+                    "available": True,
+                    "model": self.local_model,
+                    "cost": "$0.00",
+                    "latency": "0.1-1s",
+                    "private": True,
+                    "offline": True,
+                },
+            )
         return targets

@@ -7,7 +7,7 @@ alongside Powerhouse's cloud agent swarm. Simple queries run locally
 
 Usage:
     from services.openjarvis_bridge import OpenJarvisBridge, HybridRouter
-    
+
     bridge = OpenJarvisBridge()
     result = await bridge.ask("What's my margin on Sukienki XL?")
 """

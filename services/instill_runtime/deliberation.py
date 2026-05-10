@@ -6,20 +6,19 @@ Instead, they propose actions → council members vote → action executes only 
 
 Usage:
     council = DeliberationCouncil(quorum=3, approval_threshold=0.66)
-    
+
     proposal = Proposal(
         agent_id="autofix",
         action="deploy_hotfix",
         description="Fix NullPointerException in auth.ts:42",
         risk_level=RiskLevel.MEDIUM,
     )
-    
+
     verdict = await council.deliberate(proposal)
     if verdict.approved:
         await execute_action(proposal.action)
 """
 
-import asyncio
 import logging
 import uuid
 from dataclasses import dataclass, field
@@ -28,15 +27,15 @@ from enum import Enum
 from typing import Any
 
 from ..shared import EventBus, Event, EventPriority, get_event_bus
-from ..shared import EpisodicMemory, MemoryEntry, get_memory
+from ..shared import EpisodicMemory, get_memory
 
 logger = logging.getLogger(__name__)
 
 
 class RiskLevel(str, Enum):
-    LOW = "low"        # Safe, reversible (e.g., add logging)
+    LOW = "low"  # Safe, reversible (e.g., add logging)
     MEDIUM = "medium"  # Some risk, reversible (e.g., config change)
-    HIGH = "high"      # Significant risk (e.g., database migration)
+    HIGH = "high"  # Significant risk (e.g., database migration)
     CRITICAL = "critical"  # Production impact (e.g., hotfix deploy)
 
 
@@ -50,17 +49,21 @@ class VoteType(str, Enum):
 @dataclass
 class Vote:
     """A single council member's vote."""
+
     voter_id: str
     voter_role: str  # "architect", "reviewer", "devops", etc.
     vote: VoteType
     reason: str = ""
     condition: str = ""  # For CONDITIONAL votes
-    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    timestamp: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
 
 
 @dataclass
 class Proposal:
     """An action proposed by an agent for council deliberation."""
+
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
     agent_id: str = ""
     action: str = ""  # Short name: "deploy_hotfix", "scale_service", "rollback"
@@ -68,27 +71,32 @@ class Proposal:
     risk_level: RiskLevel = RiskLevel.MEDIUM
     estimated_cost_usd: float = 0.0
     context: dict[str, Any] = field(default_factory=dict)
-    proposed_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    proposed_at: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
 
 
 @dataclass
 class Verdict:
     """Result of council deliberation."""
+
     proposal_id: str
     approved: bool
     approval_ratio: float  # 0.0 to 1.0
     votes: list[Vote] = field(default_factory=list)
     summary: str = ""
-    resolved_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    resolved_at: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
 
 
 class DeliberationCouncil:
     """
     A council of agents that votes on proposed actions.
-    
+
     High-stakes actions (deploy, scale, rollback) must pass council approval.
     Low-risk actions can auto-approve.
-    
+
     Quorum and threshold are configurable per risk level.
     """
 
@@ -133,7 +141,7 @@ class DeliberationCouncil:
     async def deliberate(self, proposal: Proposal) -> Verdict:
         """
         Run the deliberation process for a proposal.
-        
+
         1. Auto-approve low-risk proposals
         2. Notify council members
         3. Simulate voting (async in production)
@@ -151,19 +159,22 @@ class DeliberationCouncil:
             return verdict
 
         # Notify the bus
-        await self._bus.emit_nowait(Event(
-            event_type="council.deliberation_started",
-            payload={
-                "proposal_id": proposal.id,
-                "agent_id": proposal.agent_id,
-                "action": proposal.action,
-                "risk": proposal.risk_level.value,
-                "quorum": self.quorum,
-            },
-            source="deliberation_council",
-            priority=EventPriority.HIGH if proposal.risk_level in (RiskLevel.HIGH, RiskLevel.CRITICAL)
-            else EventPriority.NORMAL,
-        ))
+        await self._bus.emit_nowait(
+            Event(
+                event_type="council.deliberation_started",
+                payload={
+                    "proposal_id": proposal.id,
+                    "agent_id": proposal.agent_id,
+                    "action": proposal.action,
+                    "risk": proposal.risk_level.value,
+                    "quorum": self.quorum,
+                },
+                source="deliberation_council",
+                priority=EventPriority.HIGH
+                if proposal.risk_level in (RiskLevel.HIGH, RiskLevel.CRITICAL)
+                else EventPriority.NORMAL,
+            )
+        )
 
         # Simulate voting (in production, this would be real agent deliberation)
         votes = await self._simulate_voting(proposal)
@@ -200,7 +211,7 @@ class DeliberationCouncil:
     async def _simulate_voting(self, proposal: Proposal) -> list[Vote]:
         """
         Simulate council voting.
-        
+
         In production, this would dispatch to real agents and await their deliberation.
         For now, uses heuristic voting based on risk level and member roles.
         """
@@ -210,15 +221,18 @@ class DeliberationCouncil:
             votes.append(vote)
 
         # Mark deliberation complete
-        await self._bus.emit_nowait(Event(
-            event_type="council.deliberation_complete",
-            payload={
-                "proposal_id": proposal.id,
-                "approved": sum(1 for v in votes if v.vote == VoteType.APPROVE) >= self.quorum,
-                "total_votes": len(votes),
-            },
-            source="deliberation_council",
-        ))
+        await self._bus.emit_nowait(
+            Event(
+                event_type="council.deliberation_complete",
+                payload={
+                    "proposal_id": proposal.id,
+                    "approved": sum(1 for v in votes if v.vote == VoteType.APPROVE)
+                    >= self.quorum,
+                    "total_votes": len(votes),
+                },
+                source="deliberation_council",
+            )
+        )
 
         return votes
 
@@ -228,39 +242,57 @@ class DeliberationCouncil:
         if role == "reviewer":
             if proposal.risk_level in (RiskLevel.CRITICAL, RiskLevel.HIGH):
                 return Vote(
-                    voter_id=voter_id, voter_role=role,
+                    voter_id=voter_id,
+                    voter_role=role,
                     vote=VoteType.CONDITIONAL,
                     reason="High risk — needs test verification first",
                     condition="All tests must pass before deployment",
                 )
-            return Vote(voter_id=voter_id, voter_role=role, vote=VoteType.APPROVE,
-                       reason="Looks good from code perspective")
+            return Vote(
+                voter_id=voter_id,
+                voter_role=role,
+                vote=VoteType.APPROVE,
+                reason="Looks good from code perspective",
+            )
 
         # DevOps cares about cost and stability
         if role == "devops":
             if proposal.estimated_cost_usd > 10.0:
                 return Vote(
-                    voter_id=voter_id, voter_role=role,
+                    voter_id=voter_id,
+                    voter_role=role,
                     vote=VoteType.CONDITIONAL,
                     reason=f"Cost exceeds budget: ${proposal.estimated_cost_usd:.2f}",
                     condition="Verify cost estimate with finance",
                 )
-            return Vote(voter_id=voter_id, voter_role=role, vote=VoteType.APPROVE,
-                       reason="Infrastructure impact acceptable")
+            return Vote(
+                voter_id=voter_id,
+                voter_role=role,
+                vote=VoteType.APPROVE,
+                reason="Infrastructure impact acceptable",
+            )
 
         # Architect approves well-structured proposals
         if role == "architect":
-            return Vote(voter_id=voter_id, voter_role=role, vote=VoteType.APPROVE,
-                       reason="Architecture-compatible change")
+            return Vote(
+                voter_id=voter_id,
+                voter_role=role,
+                vote=VoteType.APPROVE,
+                reason="Architecture-compatible change",
+            )
 
         # Default: cautious approval
         if proposal.risk_level == RiskLevel.CRITICAL:
-            return Vote(voter_id=voter_id, voter_role=role,
-                       vote=VoteType.CONDITIONAL,
-                       reason="Critical risk — requires manual review",
-                       condition="Manual approval required")
-        return Vote(voter_id=voter_id, voter_role=role, vote=VoteType.APPROVE,
-                   reason="Proceed")
+            return Vote(
+                voter_id=voter_id,
+                voter_role=role,
+                vote=VoteType.CONDITIONAL,
+                reason="Critical risk — requires manual review",
+                condition="Manual approval required",
+            )
+        return Vote(
+            voter_id=voter_id, voter_role=role, vote=VoteType.APPROVE, reason="Proceed"
+        )
 
     async def _record_verdict(self, proposal: Proposal, verdict: Verdict) -> None:
         """Record the verdict in episodic memory."""
@@ -274,7 +306,9 @@ class DeliberationCouncil:
                 "approved": verdict.approved,
                 "approval_ratio": verdict.approval_ratio,
                 "risk_level": proposal.risk_level.value,
-                "votes": [{"voter": v.voter_id, "vote": v.vote.value} for v in verdict.votes],
+                "votes": [
+                    {"voter": v.voter_id, "vote": v.vote.value} for v in verdict.votes
+                ],
             },
         )
 

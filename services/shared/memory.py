@@ -8,7 +8,6 @@ Two-tier storage:
 Agents query their own history: "Have I seen this error before?"
 """
 
-import json
 import logging
 import os
 from dataclasses import dataclass, field
@@ -21,26 +20,29 @@ logger = logging.getLogger(__name__)
 @dataclass
 class MemoryEntry:
     """A single record in episodic memory."""
+
     id: str
     agent_id: str
     memory_type: str  # "decision", "error", "observation", "action"
     content: str
     metadata: dict[str, Any] = field(default_factory=dict)
     embedding: Optional[list[float]] = None
-    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    created_at: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
     project_id: str | None = None
 
 
 class EpisodicMemory:
     """
     Agent memory with semantic recall.
-    
+
     Usage:
         mem = EpisodicMemory()
         await mem.remember(agent_id="autofix", memory_type="error",
                            content="NullPointerException in auth.ts:42",
                            metadata={"stack_trace": "..."})
-        
+
         similar = await mem.recall("NullPointerException in auth", limit=5)
     """
 
@@ -103,7 +105,7 @@ class EpisodicMemory:
     ) -> list[MemoryEntry]:
         """
         Semantic recall — find similar past memories.
-        
+
         Falls back to keyword matching when ChromaDB is unavailable.
         """
         # Try ChromaDB semantic search
@@ -130,7 +132,8 @@ class EpisodicMemory:
     ) -> list[MemoryEntry]:
         """Get all memories for a specific agent."""
         entries = [
-            e for e in self._entries.values()
+            e
+            for e in self._entries.values()
             if e.agent_id == agent_id
             and (memory_type is None or e.memory_type == memory_type)
         ]
@@ -148,6 +151,7 @@ class EpisodicMemory:
         if not self._chroma:
             try:
                 import chromadb
+
                 self._chroma = chromadb.HttpClient(
                     host=self.chroma_host, port=self.chroma_port
                 )
@@ -169,12 +173,14 @@ class EpisodicMemory:
             collection.add(
                 ids=[entry.id],
                 documents=[entry.content],
-                metadatas=[{
-                    "agent_id": entry.agent_id,
-                    "memory_type": entry.memory_type,
-                    "project_id": entry.project_id or "",
-                    "created_at": entry.created_at,
-                }],
+                metadatas=[
+                    {
+                        "agent_id": entry.agent_id,
+                        "memory_type": entry.memory_type,
+                        "project_id": entry.project_id or "",
+                        "created_at": entry.created_at,
+                    }
+                ],
             )
         except Exception as e:
             logger.warning("ChromaDB add failed: %s", e)
@@ -208,7 +214,9 @@ class EpisodicMemory:
                         id=doc_id,
                         agent_id=results["metadatas"][0][i].get("agent_id", ""),
                         memory_type=results["metadatas"][0][i].get("memory_type", ""),
-                        content=results["documents"][0][i] if results.get("documents") else "",
+                        content=results["documents"][0][i]
+                        if results.get("documents")
+                        else "",
                     )
                 entries.append(entry)
         return entries

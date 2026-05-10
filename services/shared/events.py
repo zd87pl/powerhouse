@@ -6,7 +6,6 @@ An agent publishes an event; any number of agents subscribe.
 """
 
 import asyncio
-import json
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -26,11 +25,14 @@ class EventPriority(str, Enum):
 @dataclass
 class Event:
     """A typed event flowing through the bus."""
+
     event_type: str
     payload: dict[str, Any] = field(default_factory=dict)
     source: str = "unknown"  # agent or service that emitted this
     priority: EventPriority = EventPriority.NORMAL
-    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    timestamp: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
     correlation_id: str | None = None  # for tracing chains of events
 
     def to_dict(self) -> dict:
@@ -62,14 +64,14 @@ Subscriber = Callable[[Event], Coroutine[Any, Any, None]]
 class EventBus:
     """
     In-process async event bus.
-    
+
     Usage:
         bus = EventBus()
-        
+
         @bus.on("deploy.complete")
         async def on_deploy(event: Event):
             await notify_slack(event.payload["url"])
-        
+
         await bus.emit(Event(event_type="deploy.complete", payload={"url": "..."}))
     """
 
@@ -80,9 +82,11 @@ class EventBus:
 
     def on(self, event_type: str):
         """Decorator: subscribe to an event type."""
+
         def decorator(fn: Subscriber) -> Subscriber:
             self.subscribe(event_type, fn)
             return fn
+
         return decorator
 
     def subscribe(self, event_type: str, fn: Subscriber) -> None:
@@ -95,13 +99,15 @@ class EventBus:
     def unsubscribe(self, event_type: str, fn: Subscriber) -> None:
         """Remove a subscriber."""
         if event_type in self._subscribers:
-            self._subscribers[event_type] = [s for s in self._subscribers[event_type] if s != fn]
+            self._subscribers[event_type] = [
+                s for s in self._subscribers[event_type] if s != fn
+            ]
 
     async def emit(self, event: Event) -> None:
         """Publish an event to all subscribers. Non-blocking per subscriber."""
         self._history.append(event)
         if len(self._history) > self._max_history:
-            self._history = self._history[-self._max_history:]
+            self._history = self._history[-self._max_history :]
 
         subscribers = self._subscribers.get(event.event_type, [])
         if not subscribers:
@@ -116,14 +122,18 @@ class EventBus:
             if isinstance(result, Exception):
                 logger.error(
                     "Subscriber %s failed for event %s: %s",
-                    fn.__name__, event.event_type, result
+                    fn.__name__,
+                    event.event_type,
+                    result,
                 )
 
     async def emit_nowait(self, event: Event) -> None:
         """Fire-and-forget: emit without waiting for subscribers."""
         asyncio.create_task(self.emit(event))
 
-    def get_history(self, event_type: str | None = None, limit: int = 50) -> list[Event]:
+    def get_history(
+        self, event_type: str | None = None, limit: int = 50
+    ) -> list[Event]:
         """Get recent events, optionally filtered by type."""
         events = self._history
         if event_type:

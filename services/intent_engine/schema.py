@@ -118,10 +118,15 @@ class IntentFile:
         d: Dict[str, Any] = {
             "project": self.project,
             "description": self.description,
-            "stack": self.stack.value if self.stack != Stack.CUSTOM else self.raw.get("stack", "custom"),
+            "stack": self.stack.value
+            if self.stack != Stack.CUSTOM
+            else self.raw.get("stack", "custom"),
         }
         if self.deploy.provider != Provider.NONE:
-            d["deploy"] = {"provider": self.deploy.provider.value, "region": self.deploy.region}
+            d["deploy"] = {
+                "provider": self.deploy.provider.value,
+                "region": self.deploy.region,
+            }
             if self.deploy.env:
                 d["deploy"]["env"] = self.deploy.env
             if self.deploy.domain:
@@ -160,7 +165,9 @@ class IntentFile:
         return cls.from_dict(raw, source_path=path)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any], source_path: Optional[Path] = None) -> "IntentFile":
+    def from_dict(
+        cls, data: Dict[str, Any], source_path: Optional[Path] = None
+    ) -> "IntentFile":
         monitoring_data = data.get("monitoring", {}) or {}
         memory_data = data.get("memory", {}) or {}
         ci_data = data.get("ci", {}) or {}
@@ -204,8 +211,12 @@ class IntentFile:
             project=data.get("project", "unknown"),
             description=data.get("description", ""),
             stack=stack,
-            deploy=deploy, monitoring=monitoring, memory=memory, ci=ci,
-            source_path=source_path, raw=data,
+            deploy=deploy,
+            monitoring=monitoring,
+            memory=memory,
+            ci=ci,
+            source_path=source_path,
+            raw=data,
         )
 
 

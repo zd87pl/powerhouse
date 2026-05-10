@@ -1,11 +1,19 @@
 """SQLAlchemy models for Instill SaaS."""
 
 from datetime import datetime, timezone
-from typing import Optional
 import uuid
 
-from sqlalchemy import Column, String, DateTime, Text, JSON, ForeignKey, Boolean, create_engine
-from sqlalchemy.orm import DeclarativeBase, relationship, Session
+from sqlalchemy import (
+    Column,
+    String,
+    DateTime,
+    Text,
+    JSON,
+    ForeignKey,
+    Boolean,
+    create_engine,
+)
+from sqlalchemy.orm import DeclarativeBase, relationship
 
 
 class Base(DeclarativeBase):
@@ -26,8 +34,12 @@ class Tenant(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     is_active = Column(Boolean, default=True)
 
-    projects = relationship("Project", back_populates="tenant", cascade="all, delete-orphan")
-    api_keys = relationship("ApiKey", back_populates="tenant", cascade="all, delete-orphan")
+    projects = relationship(
+        "Project", back_populates="tenant", cascade="all, delete-orphan"
+    )
+    api_keys = relationship(
+        "ApiKey", back_populates="tenant", cascade="all, delete-orphan"
+    )
 
 
 class Project(Base):
@@ -39,15 +51,25 @@ class Project(Base):
     description = Column(String, default="")
     stack = Column(String, default="custom")
     intent_yaml = Column(Text, default="")  # Raw .powerhouse.yml content
-    status = Column(String, default="pending")  # pending, reconciling, synced, drifted, error
+    status = Column(
+        String, default="pending"
+    )  # pending, reconciling, synced, drifted, error
     github_repo_url = Column(String, default="")
     deploy_url = Column(String, default="")
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
 
     tenant = relationship("Tenant", back_populates="projects")
-    reconciliation_runs = relationship("ReconciliationRun", back_populates="project", cascade="all, delete-orphan")
-    agent_runs = relationship("AgentRun", back_populates="project", cascade="all, delete-orphan")
+    reconciliation_runs = relationship(
+        "ReconciliationRun", back_populates="project", cascade="all, delete-orphan"
+    )
+    agent_runs = relationship(
+        "AgentRun", back_populates="project", cascade="all, delete-orphan"
+    )
 
 
 class ReconciliationRun(Base):
@@ -55,7 +77,9 @@ class ReconciliationRun(Base):
 
     id = Column(String, primary_key=True, default=gen_id)
     project_id = Column(String, ForeignKey("projects.id"), nullable=False, index=True)
-    status = Column(String, default="pending")  # pending, running, synced, drifted, error
+    status = Column(
+        String, default="pending"
+    )  # pending, running, synced, drifted, error
     dry_run = Column(Boolean, default=False)
     drifts_found = Column(JSON, default=list)
     drifts_resolved = Column(JSON, default=list)
@@ -99,7 +123,11 @@ class ApiKey(Base):
 
 def get_engine(db_url: str = "sqlite:///instill.db"):
     """Create SQLAlchemy engine. Use SQLite for dev, Postgres for prod."""
-    return create_engine(db_url, echo=False, connect_args={"check_same_thread": False} if "sqlite" in db_url else {})
+    return create_engine(
+        db_url,
+        echo=False,
+        connect_args={"check_same_thread": False} if "sqlite" in db_url else {},
+    )
 
 
 def init_db(db_url: str = "sqlite:///instill.db"):

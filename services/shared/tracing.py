@@ -9,7 +9,7 @@ import logging
 import os
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +19,7 @@ try:
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import BatchSpanProcessor
     from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+
     _OTEL_AVAILABLE = True
 except ImportError:
     _OTEL_AVAILABLE = False
@@ -28,10 +29,10 @@ except ImportError:
 class Tracer:
     """
     Wrapper around OpenTelemetry with graceful fallback.
-    
+
     Usage:
         tracer = Tracer(service_name="autofix-daemon")
-        
+
         with tracer.span("diagnose_error") as span:
             span.set_attribute("error_type", "NullPointerException")
             # ... do work ...
@@ -72,15 +73,21 @@ class Tracer:
     def span(self, name: str, attributes: dict[str, Any] | None = None):
         """
         Context manager for a traced span.
-        
+
         If tracing is disabled, this is a transparent no-op.
         """
         if not self._enabled or not self._tracer:
             # No-op span
             class _NoOpSpan:
-                def set_attribute(self, key, value): pass
-                def add_event(self, name, attributes=None): pass
-                def set_status(self, status): pass
+                def set_attribute(self, key, value):
+                    pass
+
+                def add_event(self, name, attributes=None):
+                    pass
+
+                def set_status(self, status):
+                    pass
+
             yield _NoOpSpan()
             return
 

@@ -10,11 +10,9 @@ Usage:
     result = await growth.run("Analyze traffic anomaly on /sukienki page")
 """
 
-import asyncio
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any
 
 from ..instill_runtime import AgentKernel, AgentConfig, TaskResult
 from ..shared import EventBus, Event, EventPriority, get_event_bus
@@ -25,6 +23,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class GrowthAlert:
     """An actionable alert from the growth agent."""
+
     alert_type: str  # "traffic_anomaly", "conversion_drop", "ab_test_result"
     metric: str
     current_value: float
@@ -32,17 +31,20 @@ class GrowthAlert:
     deviation_pct: float
     recommendation: str
     severity: str = "warning"
-    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    timestamp: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
 
 
 @dataclass
 class ABTestHypothesis:
     """A proposed A/B test."""
+
     id: str
     name: str
     hypothesis: str  # "If we [change], then [metric] will [improve] because [reason]"
-    variant_a: str    # Control
-    variant_b: str    # Treatment
+    variant_a: str  # Control
+    variant_b: str  # Treatment
     primary_metric: str  # e.g., "conversion_rate"
     expected_lift_pct: float
     min_sample_size: int = 1000
@@ -52,7 +54,7 @@ class ABTestHypothesis:
 class GrowthAgent:
     """
     Autonomous growth engineering agent.
-    
+
     Monitors:
     - Traffic patterns and anomalies
     - Conversion rate changes
@@ -61,9 +63,9 @@ class GrowthAgent:
     """
 
     # Anomaly thresholds
-    TRAFFIC_ANOMALY_THRESHOLD = 0.30    # 30% deviation from baseline
-    CONVERSION_DROP_THRESHOLD = 0.15     # 15% drop triggers alert
-    BOUNCE_RATE_SPIKE = 0.20            # 20% increase in bounce rate
+    TRAFFIC_ANOMALY_THRESHOLD = 0.30  # 30% deviation from baseline
+    CONVERSION_DROP_THRESHOLD = 0.15  # 15% drop triggers alert
+    BOUNCE_RATE_SPIKE = 0.20  # 20% increase in bounce rate
 
     def __init__(self):
         self._bus: EventBus = get_event_bus()
@@ -108,33 +110,41 @@ class GrowthAgent:
                 baseline=baseline_visits,
                 deviation_pct=round(deviation * 100, 1),
                 recommendation=(
-                    f"Traffic {direction} of {abs(deviation)*100:.0f}% on {page}. "
+                    f"Traffic {direction} of {abs(deviation) * 100:.0f}% on {page}. "
                     f"{'Check for viral content or referrer.' if deviation > 0 else 'Check for broken links or SEO penalty.'}"
                 ),
                 severity="warning",
             )
 
-            await self._bus.emit_nowait(Event(
-                event_type="growth.traffic_anomaly",
-                payload={
-                    "page": page, "deviation_pct": alert.deviation_pct,
-                    "direction": direction,
-                },
-                source="growth_agent",
-                priority=EventPriority.NORMAL,
-            ))
+            await self._bus.emit_nowait(
+                Event(
+                    event_type="growth.traffic_anomaly",
+                    payload={
+                        "page": page,
+                        "deviation_pct": alert.deviation_pct,
+                        "direction": direction,
+                    },
+                    source="growth_agent",
+                    priority=EventPriority.NORMAL,
+                )
+            )
 
             return alert
 
         return None
 
     async def propose_ab_test(
-        self, name: str, hypothesis: str, variant_a: str, variant_b: str,
+        self,
+        name: str,
+        hypothesis: str,
+        variant_a: str,
+        variant_b: str,
         primary_metric: str = "conversion_rate",
         expected_lift_pct: float = 5.0,
     ) -> ABTestHypothesis:
         """Propose a new A/B test."""
         import uuid
+
         test = ABTestHypothesis(
             id=uuid.uuid4().hex[:8],
             name=name,
@@ -146,23 +156,30 @@ class GrowthAgent:
         )
         self._active_tests[test.id] = test
 
-        await self._bus.emit_nowait(Event(
-            event_type="growth.ab_test_proposed",
-            payload={
-                "test_id": test.id, "name": test.name,
-                "hypothesis": test.hypothesis,
-                "expected_lift_pct": test.expected_lift_pct,
-            },
-            source="growth_agent",
-            priority=EventPriority.LOW,
-        ))
+        await self._bus.emit_nowait(
+            Event(
+                event_type="growth.ab_test_proposed",
+                payload={
+                    "test_id": test.id,
+                    "name": test.name,
+                    "hypothesis": test.hypothesis,
+                    "expected_lift_pct": test.expected_lift_pct,
+                },
+                source="growth_agent",
+                priority=EventPriority.LOW,
+            )
+        )
 
         logger.info("A/B test proposed: %s", test.name)
         return test
 
     async def evaluate_ab_test(
-        self, test_id: str, control_conversions: int, control_visitors: int,
-        treatment_conversions: int, treatment_visitors: int,
+        self,
+        test_id: str,
+        control_conversions: int,
+        control_visitors: int,
+        treatment_conversions: int,
+        treatment_visitors: int,
     ) -> GrowthAlert | None:
         """Evaluate A/B test results for statistical significance."""
         if test_id not in self._active_tests:
@@ -191,15 +208,19 @@ class GrowthAgent:
                 severity="info" if lift > 0 else "warning",
             )
 
-            await self._bus.emit_nowait(Event(
-                event_type="growth.ab_test_completed",
-                payload={
-                    "test_id": test_id, "lift_pct": lift,
-                    "significant": True, "winner": "B" if lift > 0 else "A",
-                },
-                source="growth_agent",
-                priority=EventPriority.NORMAL,
-            ))
+            await self._bus.emit_nowait(
+                Event(
+                    event_type="growth.ab_test_completed",
+                    payload={
+                        "test_id": test_id,
+                        "lift_pct": lift,
+                        "significant": True,
+                        "winner": "B" if lift > 0 else "A",
+                    },
+                    source="growth_agent",
+                    priority=EventPriority.NORMAL,
+                )
+            )
 
             del self._active_tests[test_id]
             return alert
@@ -207,8 +228,11 @@ class GrowthAgent:
         return None
 
     async def _handle_task(
-        self, task: str, context: dict | None = None,
-        model: str = "", memory_context: str = "",
+        self,
+        task: str,
+        context: dict | None = None,
+        model: str = "",
+        memory_context: str = "",
     ) -> str:
         """Handle incoming growth tasks."""
         task_lower = task.lower()
@@ -239,10 +263,16 @@ class GrowthAgent:
 
         if "propose" in task_lower or "hypothesis" in task_lower:
             test = await self.propose_ab_test(
-                name=context.get("name", "Untitled test") if context else "Untitled test",
-                hypothesis=context.get("hypothesis", "No hypothesis provided") if context else "No hypothesis",
+                name=context.get("name", "Untitled test")
+                if context
+                else "Untitled test",
+                hypothesis=context.get("hypothesis", "No hypothesis provided")
+                if context
+                else "No hypothesis",
                 variant_a=context.get("variant_a", "Control") if context else "Control",
-                variant_b=context.get("variant_b", "Treatment") if context else "Treatment",
+                variant_b=context.get("variant_b", "Treatment")
+                if context
+                else "Treatment",
             )
             return f"📊 A/B test proposed: {test.name}\nHypothesis: {test.hypothesis}\nExpected lift: {test.expected_lift_pct}%"
 

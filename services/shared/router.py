@@ -8,24 +8,24 @@ Saves ~70% on API costs vs. always using the biggest model.
 """
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 
 class TaskComplexity(str, Enum):
-    TRIVIAL = "trivial"      # "What does git status do?"
-    SIMPLE = "simple"         # "Add a comment to this function"
-    MODERATE = "moderate"     # "Refactor this module"
-    COMPLEX = "complex"       # "Design the authentication system"
-    CRITICAL = "critical"     # "Fix this production outage"
+    TRIVIAL = "trivial"  # "What does git status do?"
+    SIMPLE = "simple"  # "Add a comment to this function"
+    MODERATE = "moderate"  # "Refactor this module"
+    COMPLEX = "complex"  # "Design the authentication system"
+    CRITICAL = "critical"  # "Fix this production outage"
 
 
 @dataclass
 class RouterCall:
     """Metadata about a routed call."""
+
     task_type: str
     complexity: TaskComplexity
     model: str
@@ -38,14 +38,14 @@ class RouterCall:
 class ModelRouter:
     """
     Routes tasks to the optimal model based on complexity and budget.
-    
+
     Usage:
         router = ModelRouter()
-        
+
         # Automatic routing
         model = router.route("code_review", TaskComplexity.MODERATE)
         # → returns "anthropic/claude-sonnet-4"
-        
+
         # With budget constraint
         model = router.route("quick_chat", TaskComplexity.TRIVIAL, max_cost=0.001)
         # → returns "meta-llama/llama-4-maverick:free"
@@ -124,12 +124,12 @@ class ModelRouter:
     ) -> str:
         """
         Pick the best model for this task.
-        
+
         Args:
             task_type: e.g. "code_generation", "code_review", "debugging"
             complexity: How hard is this task?
             max_cost: Optional cost cap per 1M tokens. Overrides the default route.
-        
+
         Returns:
             Model identifier string for OpenRouter API.
         """
@@ -143,8 +143,7 @@ class ModelRouter:
             if model_cost > max_cost:
                 # Downgrade to cheapest model under budget
                 affordable = [
-                    (m, c) for m, c in self.MODEL_COSTS.items()
-                    if c <= max_cost
+                    (m, c) for m, c in self.MODEL_COSTS.items() if c <= max_cost
                 ]
                 if affordable:
                     model = sorted(affordable, key=lambda x: x[1], reverse=True)[0][0]
@@ -153,8 +152,10 @@ class ModelRouter:
 
         logger.info(
             "Routed %s/%s → %s ($%.4f/1M tokens)",
-            task_type, complexity.value, model,
-            self.MODEL_COSTS.get(model, 0)
+            task_type,
+            complexity.value,
+            model,
+            self.MODEL_COSTS.get(model, 0),
         )
         return model
 

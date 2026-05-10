@@ -7,26 +7,23 @@ to Powerhouse's cloud agent swarm.
 
 Usage:
     bridge = OpenJarvisBridge()
-    
+
     # Simple query → local OpenJarvis (Qwen 4B, ~0.3s)
     result = await bridge.ask("What's my margin on Sukienki XL?")
-    
+
     # Complex task → Powerhouse cloud (Claude Opus, agent swarm)
     result = await bridge.build("Build me a store with Shopify + BLIK")
-    
+
     # The user never chooses — the router decides.
 """
 
-import asyncio
 import logging
-import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Optional
 
-from ..shared import EventBus, Event, EventPriority, get_event_bus
-from ..shared import EpisodicMemory, MemoryEntry, get_memory
+from ..shared import EventBus, Event, get_event_bus
+from ..shared import EpisodicMemory, get_memory
 from ..shared import ModelRouter, TaskComplexity, get_router, get_tracer
 
 logger = logging.getLogger(__name__)
@@ -34,14 +31,16 @@ logger = logging.getLogger(__name__)
 
 class ExecutionTarget(str, Enum):
     """Where a query was executed."""
-    LOCAL = "local"        # OpenJarvis on-device
-    CLOUD = "cloud"        # Powerhouse agent swarm
+
+    LOCAL = "local"  # OpenJarvis on-device
+    CLOUD = "cloud"  # Powerhouse agent swarm
     LOCAL_FALLBACK = "local_fallback"  # Cloud failed, fell back to local
 
 
 @dataclass
 class BridgeResult:
     """Result from the OpenJarvis bridge."""
+
     query: str
     target: ExecutionTarget
     model: str = ""
@@ -50,13 +49,15 @@ class BridgeResult:
     cost_usd: float = 0.0
     tokens_used: int = 0
     error: str = ""
-    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    timestamp: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
 
 
 class OpenJarvisBridge:
     """
     Bridge between Powerhouse and OpenJarvis local runtime.
-    
+
     Handles:
     - Initializing local OpenJarvis runtime (if available)
     - Routing queries to local or cloud based on complexity
@@ -90,11 +91,13 @@ class OpenJarvisBridge:
         """Try to initialize OpenJarvis. Graceful fallback if unavailable."""
         try:
             from openjarvis import Jarvis
+
             self._jarvis = Jarvis(engine_key=self.engine)
             self._available = True
             logger.info(
                 "OpenJarvis initialized: engine=%s, model=%s",
-                self.engine, self.local_model,
+                self.engine,
+                self.local_model,
             )
         except ImportError:
             logger.info(
@@ -112,10 +115,12 @@ class OpenJarvisBridge:
         """Is OpenJarvis local runtime available?"""
         return self._available and self._jarvis is not None
 
-    async def ask(self, query: str, force: ExecutionTarget | None = None) -> BridgeResult:
+    async def ask(
+        self, query: str, force: ExecutionTarget | None = None
+    ) -> BridgeResult:
         """
         Ask a question. Router decides local vs cloud.
-        
+
         Args:
             query: The user's question
             force: Override routing (e.g., force cloud for testing)
@@ -129,11 +134,13 @@ class OpenJarvisBridge:
             target = self._route_query(query)
 
         # Emit start event
-        await self._bus.emit_nowait(Event(
-            event_type="bridge.query_started",
-            payload={"query": query[:200], "target": target.value},
-            source="openjarvis_bridge",
-        ))
+        await self._bus.emit_nowait(
+            Event(
+                event_type="bridge.query_started",
+                payload={"query": query[:200], "target": target.value},
+                source="openjarvis_bridge",
+            )
+        )
 
         result = BridgeResult(query=query, target=target)
 
@@ -157,15 +164,17 @@ class OpenJarvisBridge:
             )
 
             # Emit completion
-            await self._bus.emit_nowait(Event(
-                event_type="bridge.query_completed",
-                payload={
-                    "query": query[:200],
-                    "target": result.target.value,
-                    "duration_ms": result.duration_ms,
-                },
-                source="openjarvis_bridge",
-            ))
+            await self._bus.emit_nowait(
+                Event(
+                    event_type="bridge.query_completed",
+                    payload={
+                        "query": query[:200],
+                        "target": result.target.value,
+                        "duration_ms": result.duration_ms,
+                    },
+                    source="openjarvis_bridge",
+                )
+            )
 
         except Exception as e:
             # Local failed → try cloud fallback
@@ -218,7 +227,9 @@ class OpenJarvisBridge:
 
         model = self.local_model
 
-        with self._tracer.span("bridge.local", {"model": model, "query_len": len(query)}):
+        with self._tracer.span(
+            "bridge.local", {"model": model, "query_len": len(query)}
+        ):
             try:
                 response = self._jarvis.ask(query, model=model)
                 return BridgeResult(
@@ -237,7 +248,9 @@ class OpenJarvisBridge:
             "quick_chat", TaskComplexity.MODERATE
         )
 
-        with self._tracer.span("bridge.cloud", {"model": model, "query_len": len(query)}):
+        with self._tracer.span(
+            "bridge.cloud", {"model": model, "query_len": len(query)}
+        ):
             # Delegate to Powerhouse agent kernel
             from ..instill_runtime import AgentKernel, AgentConfig
 
@@ -267,24 +280,50 @@ class OpenJarvisBridge:
         query_lower = query.lower()
 
         # Build/deploy keywords → complex
-        if any(w in query_lower for w in [
-            "build", "deploy", "create", "scaffold", "design",
-            "architecture", "system", "infrastructure",
-        ]):
+        if any(
+            w in query_lower
+            for w in [
+                "build",
+                "deploy",
+                "create",
+                "scaffold",
+                "design",
+                "architecture",
+                "system",
+                "infrastructure",
+            ]
+        ):
             return TaskComplexity.COMPLEX
 
         # Analysis keywords → moderate
-        if any(w in query_lower for w in [
-            "analyze", "optimize", "refactor", "migrate",
-            "investigate", "debug", "diagnose",
-        ]):
+        if any(
+            w in query_lower
+            for w in [
+                "analyze",
+                "optimize",
+                "refactor",
+                "migrate",
+                "investigate",
+                "debug",
+                "diagnose",
+            ]
+        ):
             return TaskComplexity.MODERATE
 
         # Simple factual queries → simple
-        if any(w in query_lower for w in [
-            "what", "how many", "show me", "list", "check",
-            "summarize", "status", "health",
-        ]):
+        if any(
+            w in query_lower
+            for w in [
+                "what",
+                "how many",
+                "show me",
+                "list",
+                "check",
+                "summarize",
+                "status",
+                "health",
+            ]
+        ):
             return TaskComplexity.SIMPLE
 
         return TaskComplexity.SIMPLE
