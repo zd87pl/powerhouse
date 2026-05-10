@@ -9,7 +9,7 @@ try:
     HAS_REQUESTS = True
 except ImportError:
     HAS_REQUESTS = False
-    requests = None
+    requests = None  # type: ignore[assignment]
 
 
 class GitHubResolver(Resolver):
