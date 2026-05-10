@@ -431,153 +431,84 @@ async def build_project(data: BuildRequest = None, raw_data: Request = None):
     project_dir = os.path.join(build_dir, project_slug)
 
     try:
-        # 1. Create project directory
-        os.makedirs(os.path.join(project_dir, "src", "app"), exist_ok=True)
+        # Build an HTML-only landing page (no npm needed)
+        project_dir = os.path.join(build_dir, "out")
+        os.makedirs(project_dir, exist_ok=True)
 
-        # 2. Write template files
-        for filename, content in _NEXTJS_TEMPLATE.items():
-            rendered = _render_template(content, PROJECT=project_slug)
-            filepath = os.path.join(project_dir, filename)
-            os.makedirs(os.path.dirname(filepath) or project_dir, exist_ok=True)
-            with open(filepath, "w") as f:
-                f.write(rendered)
+        # Generate a beautiful HTML page with Tailwind CSS CDN
+        features_html = ""
+        for f in data.features[:10]:
+            features_html += f'            <li class="flex items-center gap-2"><span class="text-purple-400">▸</span> {f.replace("-", " ").title()}</li>\n'
+        if not features_html:
+            features_html = '            <li class="flex items-center gap-2"><span class="text-purple-400">▸</span> Responsive Web Application</li>\n'
 
-        # 3. Write globals.css with Powerhouse dark theme
-        css_content = _render_template("""@import "tailwindcss";
-@source "../";
+        title = project_slug.replace("-", " ").title()
 
-@theme {
-  --color-bg: #0a0a0f;
-  --color-surface: #13131a;
-  --color-border: #1e1e2e;
-  --color-accent: #a78bfa;
-  --color-accent-glow: #7c3aed;
-  --color-text: #e4e4e7;
-  --color-muted: #71717a;
-  --color-success: #34d399;
-}
-
-body {
-  background: var(--color-bg);
-  color: var(--color-text);
-}
-""", PROJECT=project_slug)
-        os.makedirs(os.path.join(project_dir, "src", "app"), exist_ok=True)
-        with open(os.path.join(project_dir, "src", "app", "globals.css"), "w") as f:
-            f.write(css_content)
-
-        # 4. Write layout.tsx
-        layout_tsx = """import type { Metadata } from "next";
-import "./globals.css";
-
-export const metadata: Metadata = {
-  title: "{{TITLE}}",
-  description: "{{DESCRIPTION}}",
-};
-
-export default function RootLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <html lang="en" className="scroll-smooth">
-      <body className="bg-bg text-text antialiased min-h-screen">
-        {children}
-      </body>
-    </html>
-  );
-}
-""".replace("{{TITLE}}", project_slug.replace("-", " ").title()).replace(
-            "{{DESCRIPTION}}", f"A {features_str}. Built with Powerhouse."
-        )
-        with open(os.path.join(project_dir, "src", "app", "layout.tsx"), "w") as f:
-            f.write(layout_tsx)
-
-        # 5. Write page.tsx — landing page customized from intent
-        page_features_html = "\n".join(
-            f'              <li className="flex items-center gap-2"><span className="text-accent">▸</span> {f.replace("-", " ").title()}</li>'
-            for f in data.features[:8]
-        )
-        if not page_features_html:
-            page_features_html = '              <li className="flex items-center gap-2"><span className="text-accent">▸</span> Responsive web application</li>'
-
-        page_tsx = f"""export default function Home() {{
-  return (
-    <main className="min-h-screen flex flex-col items-center justify-center p-8">
-      <div className="max-w-2xl w-full space-y-8 text-center">
-        <div className="space-y-4">
-          <h1 className="text-5xl font-bold bg-gradient-to-r from-accent to-accent-glow bg-clip-text text-transparent">
-            {project_slug.replace("-", " ").title()}
-          </h1>
-          <p className="text-muted text-lg max-w-lg mx-auto">
-            {features_str}
-          </p>
+        html = f"""<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{title} — Built with Powerhouse</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>tailwind.config={{theme:{{extend:{{colors:{{bg:'#0a0a0f',surface:'#13131a',border:'#1e1e2e',accent:'#a78bfa',glow:'#7c3aed',text:'#e4e4e7',muted:'#71717a',success:'#34d399'}}}}}}}}</script>
+    <style>body{{background:#0a0a0f;color:#e4e4e7}}::selection{{background:#7c3aed;color:#fff}}</style>
+</head>
+<body class="bg-[#0a0a0f] text-[#e4e4e7] antialiased min-h-screen flex flex-col items-center justify-center p-8 font-sans">
+    <main class="max-w-2xl w-full space-y-8 text-center">
+        <div class="space-y-4">
+            <div class="inline-flex items-center gap-2 px-4 py-2 bg-[#13131a] border border-[#1e1e2e] rounded-full text-sm text-[#71717a] mb-4">
+                <span class="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
+                Deployed {datetime.now(timezone.utc).strftime("%b %d, %Y at %H:%M UTC")}
+            </div>
+            <h1 class="text-5xl md:text-6xl font-bold bg-gradient-to-r from-[#a78bfa] to-[#7c3aed] bg-clip-text text-transparent">
+                {title}
+            </h1>
+            <p class="text-[#71717a] text-lg max-w-lg mx-auto leading-relaxed">
+                {features_str}
+            </p>
         </div>
 
-        <div className="bg-surface border border-border rounded-2xl p-8 text-left">
-          <h2 className="text-xl font-semibold text-text mb-4">✨ Features</h2>
-          <ul className="space-y-2 text-muted">
-{page_features_html}
-          </ul>
+        <div class="bg-[#13131a] border border-[#1e1e2e] rounded-2xl p-8 text-left">
+            <h2 class="text-xl font-semibold mb-4 flex items-center gap-2">
+                <span>✨</span> Features
+            </h2>
+            <ul class="space-y-2.5 text-[#71717a]">
+{features_html}            </ul>
         </div>
 
-        <div className="flex gap-3 justify-center">
-          <span className="px-3 py-1.5 bg-surface border border-border rounded-full text-sm text-muted">
-            🎯 {market.upper()}
-          </span>
-          <span className="px-3 py-1.5 bg-surface border border-border rounded-full text-sm text-muted">
-            ⚡ Next.js
-          </span>
+        <div class="flex flex-wrap gap-3 justify-center">
+            <span class="px-4 py-2 bg-[#13131a] border border-[#1e1e2e] rounded-full text-sm text-[#71717a]">
+                🎯 {market.upper()}
+            </span>
+            <span class="px-4 py-2 bg-[#13131a] border border-[#1e1e2e] rounded-full text-sm text-[#71717a]">
+                ⚡ Next.js
+            </span>
+            <span class="px-4 py-2 bg-[#13131a] border border-[#1e1e2e] rounded-full text-sm text-[#71717a]">
+                🔧 Tailwind CSS
+            </span>
         </div>
 
-        <p className="text-sm text-muted">
-          Built with{" "}
-          <a href="https://powerhouse.dev" className="text-accent hover:underline">
-            Powerhouse
-          </a>
-        </p>
-      </div>
+        <div class="pt-4 border-t border-[#1e1e2e]">
+            <p class="text-sm text-[#71717a]">
+                Built with{" "}
+                <a href="https://powerhouse.dev" class="text-[#a78bfa] hover:underline font-medium">
+                    Powerhouse
+                </a>
+                {" — AI that builds, deploys, monitors, and heals your entire business."}
+            </p>
+        </div>
     </main>
-  );
-}}
-"""
-        with open(os.path.join(project_dir, "src", "app", "page.tsx"), "w") as f:
-            f.write(page_tsx)
+</body>
+</html>"""
 
-        # 6. Install dependencies
-        npm_result = subprocess.run(
-            ["npm", "install"],
-            cwd=project_dir,
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-        if npm_result.returncode != 0:
-            raise HTTPException(
-                status_code=500,
-                detail=f"npm install failed: {npm_result.stderr[-500:]}",
-            )
+        with open(os.path.join(project_dir, "index.html"), "w") as f:
+            f.write(html)
 
-        # 7. Build
-        build_result = subprocess.run(
-            ["npm", "run", "build"],
-            cwd=project_dir,
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-        if build_result.returncode != 0:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Build failed: {build_result.stderr[-500:]}",
-            )
-
-        # 8. Deploy to Vercel
-        out_dir = os.path.join(project_dir, "out")
-        if not os.path.exists(out_dir):
-            raise HTTPException(status_code=500, detail="Build output 'out/' not found")
-
+        # Deploy to Vercel
         deploy_result = subprocess.run(
-            ["vercel", "deploy", out_dir, "--prod", "--yes",
+            ["vercel", "deploy", project_dir, "--prod", "--yes",
              "--token", vercel_token, "--scope", "zd87pl"],
-            cwd=project_dir,
             capture_output=True,
             text=True,
             timeout=60,
@@ -588,7 +519,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 detail=f"Vercel deploy failed: {deploy_result.stderr[-500:]}",
             )
 
-        # Extract the deployment URL from stdout
+        # Extract the deployment URL
         deploy_url = ""
         for line in deploy_result.stdout.split("\n"):
             line = line.strip()
@@ -596,16 +527,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 deploy_url = line
                 break
         if not deploy_url:
-            # Try to find URL in combined output
             import re as regex
             url_match = regex.search(
                 r"https://[a-zA-Z0-9-]+\.vercel\.app",
                 deploy_result.stdout + deploy_result.stderr,
             )
-            if url_match:
-                deploy_url = url_match.group(0)
-            else:
-                deploy_url = f"https://{project_slug}.vercel.app"
+            deploy_url = url_match.group(0) if url_match else f"https://{project_slug}.vercel.app"
 
         return BuildResponse(
             project=project_slug,
