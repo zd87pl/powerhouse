@@ -178,7 +178,7 @@ curl -X POST http://localhost:8080/api/projects/<id>/reconcile
 
 `run_api.py` sets local-only development auth and dev secret encryption defaults. In production, configure Clerk, `POWERHOUSE_SECRET_KEY`, explicit `POWERHOUSE_CORS_ORIGINS`, and leave `POWERHOUSE_ALLOW_DEV_AUTH` disabled.
 
-The setup dashboard reports each provider as connected from environment variables, configured from encrypted user-supplied keys, or missing. Required providers currently start with GitHub and Vercel so OSS users can bring their own tokens while the control plane keeps project progress visible.
+The setup dashboard reports each provider as connected from environment variables, configured from encrypted user-supplied keys, or missing. Required providers currently start with GitHub and Vercel so OSS users can bring their own tokens while the control plane keeps project progress visible. GitHub and Vercel can also be validated from the dashboard with read-only API checks before automated work is enabled.
 
 ---
 

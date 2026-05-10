@@ -44,8 +44,9 @@ from .schemas import (
     ReconcileRequest,
     ReconciliationRunResponse,
     SetupStatusResponse,
+    SetupValidationResponse,
 )
-from .secrets import SecretConfigError, encrypt_secret
+from .secrets import SecretConfigError, decrypt_secret, encrypt_secret
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -102,6 +103,14 @@ def _require_builds_enabled() -> None:
 
 def _redact(value: str, secret: str) -> str:
     return value.replace(secret, "[redacted]") if secret else value
+
+
+def _auth_headers(token: str) -> dict[str, str]:
+    return {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json",
+        "User-Agent": "powerhouse-setup-validator",
+    }
 
 
 SETUP_PROVIDERS = [
@@ -234,6 +243,108 @@ def _setup_status_for_tenant(session: Session, tenant: Tenant) -> SetupStatusRes
     )
 
 
+def _parse_scope_header(value: str) -> list[str]:
+    return sorted({scope.strip() for scope in value.split(",") if scope.strip()})
+
+
+def _validation_status(checks: list[dict[str, str]], has_credential: bool) -> str:
+    if not has_credential:
+        return "missing"
+    if any(check["status"] == "failed" for check in checks):
+        return "invalid"
+    if any(check["status"] == "warning" for check in checks):
+        return "action_required"
+    return "valid"
+
+
+def _provider_label(provider: str) -> str:
+    for config in SETUP_PROVIDERS:
+        if config["provider"] == provider:
+            return str(config["label"])
+    return provider.title()
+
+
+def _validation_summary(provider: str, status: str) -> str:
+    label = _provider_label(provider)
+    if status == "valid":
+        return f"{label} credentials are valid for setup checks."
+    if status == "missing":
+        return f"{label} credentials are missing."
+    if status == "action_required":
+        return f"{label} credentials work, but setup needs attention."
+    return f"{label} validation failed."
+
+
+def _latest_api_key(
+    session: Session, tenant: Tenant, provider: str
+) -> Optional[ApiKey]:
+    return (
+        session.query(ApiKey)
+        .filter(ApiKey.tenant_id == tenant.id, ApiKey.provider == provider)
+        .order_by(ApiKey.created_at.desc())
+        .first()
+    )
+
+
+def _provider_credential(
+    session: Session,
+    tenant: Tenant,
+    provider: str,
+    env_names: list[str],
+) -> tuple[Optional[str], str, Optional[str]]:
+    for env_name in env_names:
+        value = os.getenv(env_name)
+        if value:
+            return value, "environment", None
+
+    key = _latest_api_key(session, tenant, provider)
+    if key is None:
+        return None, "none", None
+
+    try:
+        return decrypt_secret(key.encrypted_value), "encrypted_key", None
+    except Exception as exc:
+        return (
+            None,
+            "encrypted_key",
+            f"Stored {provider} key cannot be decrypted: {exc}",
+        )
+
+
+def _validation_response(
+    *,
+    provider: str,
+    source: str,
+    checks: list[dict[str, str]],
+    has_credential: bool,
+    account: Optional[dict[str, Any]] = None,
+    scopes: Optional[list[str]] = None,
+    next_action: str = "",
+) -> SetupValidationResponse:
+    status = _validation_status(checks, has_credential)
+    return SetupValidationResponse(
+        provider=provider,
+        status=status,
+        source=source,
+        validated_at=datetime.now(timezone.utc),
+        summary=_validation_summary(provider, status),
+        checks=checks,
+        account=account or {},
+        scopes=scopes or [],
+        next_action=next_action or _next_validation_action(provider, status),
+    )
+
+
+def _next_validation_action(provider: str, status: str) -> str:
+    if status == "valid":
+        return "No action needed."
+    if status == "missing":
+        return f"Add a {_provider_label(provider)} token in environment variables or API Keys."
+    if status == "action_required":
+        return "Review the warning checks before enabling automated work."
+    return "Replace the token or adjust its permissions, then validate again."
+
+
 app = FastAPI(
     title="Instill API",
     description="Backend API for the Instill autonomous AI engineering harness",
@@ -361,6 +472,351 @@ async def setup_status(
     tenant: Tenant = Depends(get_current_tenant),
 ):
     return _setup_status_for_tenant(session, tenant)
+
+
+@app.post("/api/setup/validate/{provider}", response_model=SetupValidationResponse)
+async def validate_setup_provider(
+    provider: str,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(get_current_tenant),
+):
+    if provider == "github":
+        return await _validate_github_setup(session, tenant)
+    if provider == "vercel":
+        return await _validate_vercel_setup(session, tenant)
+    raise HTTPException(
+        status_code=404, detail=f"{provider} validation is not wired yet"
+    )
+
+
+async def _validate_github_setup(
+    session: Session,
+    tenant: Tenant,
+) -> SetupValidationResponse:
+    token, source, credential_error = _provider_credential(
+        session, tenant, "github", ["GITHUB_TOKEN"]
+    )
+    checks: list[dict[str, str]] = []
+    if credential_error:
+        checks.append(
+            {
+                "label": "Stored credential",
+                "status": "failed",
+                "detail": credential_error,
+            }
+        )
+    if not token:
+        checks.append(
+            {
+                "label": "GitHub token",
+                "status": "failed",
+                "detail": "No GitHub token found in GITHUB_TOKEN or encrypted keys.",
+            }
+        )
+        return _validation_response(
+            provider="github",
+            source=source,
+            checks=checks,
+            has_credential=False,
+        )
+
+    headers = {
+        **_auth_headers(token),
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    account: dict[str, Any] = {}
+    scopes: list[str] = []
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            user_resp = await client.get("https://api.github.com/user", headers=headers)
+        except httpx.HTTPError as exc:
+            checks.append(
+                {
+                    "label": "Authentication",
+                    "status": "failed",
+                    "detail": f"GitHub API request failed: {exc}",
+                }
+            )
+            return _validation_response(
+                provider="github",
+                source=source,
+                checks=checks,
+                has_credential=True,
+            )
+        scopes = _parse_scope_header(user_resp.headers.get("x-oauth-scopes", ""))
+        if user_resp.status_code == 401:
+            checks.append(
+                {
+                    "label": "Authentication",
+                    "status": "failed",
+                    "detail": "GitHub rejected the token.",
+                }
+            )
+            return _validation_response(
+                provider="github",
+                source=source,
+                checks=checks,
+                has_credential=True,
+                scopes=scopes,
+            )
+        if user_resp.is_error:
+            checks.append(
+                {
+                    "label": "Authentication",
+                    "status": "failed",
+                    "detail": f"GitHub returned HTTP {user_resp.status_code}.",
+                }
+            )
+            return _validation_response(
+                provider="github",
+                source=source,
+                checks=checks,
+                has_credential=True,
+                scopes=scopes,
+            )
+
+        user = user_resp.json()
+        login = user.get("login", "")
+        account = {
+            "login": login,
+            "profile_url": user.get("html_url", ""),
+            "plan": (user.get("plan") or {}).get("name", ""),
+        }
+        checks.append(
+            {
+                "label": "Authentication",
+                "status": "passed",
+                "detail": f"Authenticated as {login}.",
+            }
+        )
+
+        try:
+            repo_resp = await client.get(
+                "https://api.github.com/user/repos",
+                headers=headers,
+                params={
+                    "per_page": 1,
+                    "affiliation": "owner,collaborator,organization_member",
+                },
+            )
+            checks.append(
+                {
+                    "label": "Repository access",
+                    "status": "passed" if not repo_resp.is_error else "failed",
+                    "detail": (
+                        "Repository listing is available."
+                        if not repo_resp.is_error
+                        else f"GitHub repository listing returned HTTP {repo_resp.status_code}."
+                    ),
+                }
+            )
+        except httpx.HTTPError as exc:
+            checks.append(
+                {
+                    "label": "Repository access",
+                    "status": "failed",
+                    "detail": f"GitHub repository listing failed: {exc}",
+                }
+            )
+
+        owner = os.getenv("GITHUB_OWNER", "").strip() or login
+        if owner == login:
+            checks.append(
+                {
+                    "label": "Target owner",
+                    "status": "passed",
+                    "detail": f"Using authenticated user {login} as the target owner.",
+                }
+            )
+        else:
+            try:
+                org_resp = await client.get(
+                    f"https://api.github.com/orgs/{owner}",
+                    headers=headers,
+                )
+                checks.append(
+                    {
+                        "label": "Target owner",
+                        "status": "passed" if not org_resp.is_error else "failed",
+                        "detail": (
+                            f"Target organization {owner} is visible to the token."
+                            if not org_resp.is_error
+                            else f"Cannot verify GITHUB_OWNER={owner}; GitHub returned HTTP {org_resp.status_code}."
+                        ),
+                    }
+                )
+            except httpx.HTTPError as exc:
+                checks.append(
+                    {
+                        "label": "Target owner",
+                        "status": "failed",
+                        "detail": f"Cannot verify GITHUB_OWNER={owner}: {exc}",
+                    }
+                )
+
+    if scopes and not {"repo", "public_repo"}.intersection(scopes):
+        checks.append(
+            {
+                "label": "Repository permissions",
+                "status": "warning",
+                "detail": "Token scopes do not include repo or public_repo. Fine-grained tokens may still work if repository permissions are configured.",
+            }
+        )
+    else:
+        checks.append(
+            {
+                "label": "Repository permissions",
+                "status": "passed",
+                "detail": (
+                    "Repository scope is present."
+                    if scopes
+                    else "GitHub did not expose token scopes; relying on successful API checks."
+                ),
+            }
+        )
+
+    return _validation_response(
+        provider="github",
+        source=source,
+        checks=checks,
+        has_credential=True,
+        account=account,
+        scopes=scopes,
+    )
+
+
+async def _validate_vercel_setup(
+    session: Session,
+    tenant: Tenant,
+) -> SetupValidationResponse:
+    token, source, credential_error = _provider_credential(
+        session, tenant, "vercel", ["VERCEL_TOKEN"]
+    )
+    checks: list[dict[str, str]] = []
+    if credential_error:
+        checks.append(
+            {
+                "label": "Stored credential",
+                "status": "failed",
+                "detail": credential_error,
+            }
+        )
+    if not token:
+        checks.append(
+            {
+                "label": "Vercel token",
+                "status": "failed",
+                "detail": "No Vercel token found in VERCEL_TOKEN or encrypted keys.",
+            }
+        )
+        return _validation_response(
+            provider="vercel",
+            source=source,
+            checks=checks,
+            has_credential=False,
+        )
+
+    account: dict[str, Any] = {}
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            user_resp = await client.get(
+                "https://api.vercel.com/v2/user",
+                headers=_auth_headers(token),
+            )
+        except httpx.HTTPError as exc:
+            checks.append(
+                {
+                    "label": "Authentication",
+                    "status": "failed",
+                    "detail": f"Vercel API request failed: {exc}",
+                }
+            )
+            return _validation_response(
+                provider="vercel",
+                source=source,
+                checks=checks,
+                has_credential=True,
+            )
+        if user_resp.status_code == 401:
+            checks.append(
+                {
+                    "label": "Authentication",
+                    "status": "failed",
+                    "detail": "Vercel rejected the token.",
+                }
+            )
+            return _validation_response(
+                provider="vercel",
+                source=source,
+                checks=checks,
+                has_credential=True,
+            )
+        if user_resp.is_error:
+            checks.append(
+                {
+                    "label": "Authentication",
+                    "status": "failed",
+                    "detail": f"Vercel returned HTTP {user_resp.status_code}.",
+                }
+            )
+            return _validation_response(
+                provider="vercel",
+                source=source,
+                checks=checks,
+                has_credential=True,
+            )
+
+        body = user_resp.json()
+        user = body.get("user", {})
+        account = {
+            "id": user.get("id", ""),
+            "username": user.get("username", ""),
+            "email": user.get("email", ""),
+        }
+        display_name = account["username"] or account["email"] or account["id"]
+        checks.append(
+            {
+                "label": "Authentication",
+                "status": "passed",
+                "detail": f"Authenticated as {display_name}.",
+            }
+        )
+
+        try:
+            projects_resp = await client.get(
+                "https://api.vercel.com/v9/projects",
+                headers=_auth_headers(token),
+                params={"limit": 1},
+            )
+            checks.append(
+                {
+                    "label": "Project access",
+                    "status": "passed" if not projects_resp.is_error else "failed",
+                    "detail": (
+                        "Project listing is available."
+                        if not projects_resp.is_error
+                        else f"Vercel project listing returned HTTP {projects_resp.status_code}."
+                    ),
+                }
+            )
+        except httpx.HTTPError as exc:
+            checks.append(
+                {
+                    "label": "Project access",
+                    "status": "failed",
+                    "detail": f"Vercel project listing failed: {exc}",
+                }
+            )
+
+    return _validation_response(
+        provider="vercel",
+        source=source,
+        checks=checks,
+        has_credential=True,
+        account=account,
+    )
 
 
 # ── Intent Parser ──

@@ -83,6 +83,24 @@ export interface SetupStatus {
   providers: SetupProviderStatus[];
 }
 
+export interface SetupValidationCheck {
+  label: string;
+  status: string;
+  detail: string;
+}
+
+export interface SetupValidationResult {
+  provider: string;
+  status: string;
+  source: string;
+  validated_at: string;
+  summary: string;
+  checks: SetupValidationCheck[];
+  account: Record<string, unknown>;
+  scopes: string[];
+  next_action: string;
+}
+
 async function fetchAPI<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     headers: { "Content-Type": "application/json", ...options?.headers },
@@ -126,5 +144,7 @@ export const api = {
   },
   setup: {
     status: () => fetchAPI<SetupStatus>("/setup/status"),
+    validate: (provider: string) =>
+      fetchAPI<SetupValidationResult>(`/setup/validate/${provider}`, { method: "POST" }),
   },
 };

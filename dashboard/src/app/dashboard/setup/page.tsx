@@ -12,8 +12,15 @@ import {
   RefreshCw,
   ShieldCheck,
 } from "lucide-react";
-import { api, type SetupProviderStatus, type SetupStatus } from "@/lib/api";
-import { errorMessage, statusColor } from "@/lib/utils";
+import {
+  api,
+  type SetupProviderStatus,
+  type SetupStatus,
+  type SetupValidationResult,
+} from "@/lib/api";
+import { errorMessage, formatDate, statusColor } from "@/lib/utils";
+
+const VALIDATABLE_PROVIDERS = new Set(["github", "vercel"]);
 
 function statusLabel(status: string) {
   return status.replace(/_/g, " ");
@@ -35,6 +42,8 @@ function providerIcon(provider: SetupProviderStatus) {
 export default function SetupPage() {
   const [setup, setSetup] = useState<SetupStatus | null>(null);
   const [loading, setLoading] = useState(true);
+  const [validating, setValidating] = useState<string | null>(null);
+  const [validationResults, setValidationResults] = useState<Record<string, SetupValidationResult>>({});
   const [error, setError] = useState("");
 
   const fetchSetup = useCallback(async () => {
@@ -52,6 +61,20 @@ export default function SetupPage() {
   useEffect(() => {
     void Promise.resolve().then(fetchSetup);
   }, [fetchSetup]);
+
+  const validateProvider = async (provider: string) => {
+    setValidating(provider);
+    setError("");
+    try {
+      const result = await api.setup.validate(provider);
+      setValidationResults((current) => ({ ...current, [provider]: result }));
+      await fetchSetup();
+    } catch (e: unknown) {
+      setError(errorMessage(e));
+    } finally {
+      setValidating(null);
+    }
+  };
 
   return (
     <div className="p-8">
@@ -133,10 +156,7 @@ export default function SetupPage() {
 
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             {setup.providers.map((provider) => (
-              <div
-                key={provider.provider}
-                className="rounded-lg border border-slate-800 bg-slate-900 p-5"
-              >
+              <div key={provider.provider} className="rounded-lg border border-slate-800 bg-slate-900 p-5">
                 <div className="mb-4 flex items-start justify-between gap-4">
                   <div className="flex min-w-0 items-center gap-3">
                     {providerIcon(provider)}
@@ -185,16 +205,72 @@ export default function SetupPage() {
                   <span className="text-xs text-slate-500">
                     {provider.has_key ? "Encrypted key saved" : "No stored key"}
                   </span>
-                  <a
-                    href={provider.docs_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 text-sm text-indigo-400 hover:text-indigo-300"
-                  >
-                    Docs
-                    <ExternalLink className="h-3.5 w-3.5" />
-                  </a>
+                  <div className="flex items-center gap-3">
+                    {VALIDATABLE_PROVIDERS.has(provider.provider) && (
+                      <button
+                        onClick={() => validateProvider(provider.provider)}
+                        disabled={validating === provider.provider}
+                        className="inline-flex items-center gap-1 rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-200 transition-colors hover:bg-slate-800 disabled:opacity-50"
+                      >
+                        {validating === provider.provider ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <ShieldCheck className="h-3.5 w-3.5" />
+                        )}
+                        Validate
+                      </button>
+                    )}
+                    <a
+                      href={provider.docs_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-sm text-indigo-400 hover:text-indigo-300"
+                    >
+                      Docs
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
+                  </div>
                 </div>
+
+                {validationResults[provider.provider] && (
+                  <div className="mt-4 rounded-lg border border-slate-800 bg-slate-950/60 p-4">
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-medium text-white">
+                          {validationResults[provider.provider].summary}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          Validated {formatDate(validationResults[provider.provider].validated_at)} via {validationResults[provider.provider].source}
+                        </p>
+                      </div>
+                      <span
+                        className={`rounded-full border px-2 py-1 text-xs capitalize ${statusColor(validationResults[provider.provider].status)}`}
+                      >
+                        {statusLabel(validationResults[provider.provider].status)}
+                      </span>
+                    </div>
+
+                    <div className="space-y-2">
+                      {validationResults[provider.provider].checks.map((check) => (
+                        <div key={`${check.label}-${check.status}`} className="flex items-start justify-between gap-3 text-sm">
+                          <div>
+                            <p className="font-medium text-slate-300">{check.label}</p>
+                            <p className="mt-0.5 text-xs leading-5 text-slate-500">{check.detail}</p>
+                          </div>
+                          <span className={`shrink-0 rounded-full border px-2 py-0.5 text-xs ${statusColor(check.status)}`}>
+                            {check.status}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {validationResults[provider.provider].next_action && (
+                      <p className="mt-3 border-t border-slate-800 pt-3 text-xs text-slate-500">
+                        {validationResults[provider.provider].next_action}
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
           </div>

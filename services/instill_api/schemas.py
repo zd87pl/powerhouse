@@ -90,6 +90,24 @@ class SetupStatusResponse(BaseModel):
     providers: List[SetupProviderStatus]
 
 
+class SetupValidationCheck(BaseModel):
+    label: str
+    status: str
+    detail: str
+
+
+class SetupValidationResponse(BaseModel):
+    provider: str
+    status: str
+    source: str
+    validated_at: datetime
+    summary: str
+    checks: List[SetupValidationCheck]
+    account: Dict[str, Any] = Field(default_factory=dict)
+    scopes: List[str] = Field(default_factory=list)
+    next_action: str
+
+
 # ── Project Runs ──
 
 
