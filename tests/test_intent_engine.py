@@ -198,6 +198,18 @@ class TestReconciliation:
         assert summary["total_resources"] == 3
         assert summary["healthy"] is False
 
+    def test_reconcile_summary_skipped_is_unhealthy(self):
+        results = [
+            ReconciliationResult(
+                resource_key="github_repo",
+                status=ResourceStatus.SKIPPED,
+                action_taken="missing credentials",
+            )
+        ]
+        summary = reconcile_summary(results)
+        assert summary["healthy"] is False
+        assert summary["errors"] == ["github_repo: missing credentials"]
+
     def test_declared_state_github(self):
         intent = IntentFile.from_dict({"project": "foo", "description": "Bar"})
         state = _declared_state(intent, "github_repo")

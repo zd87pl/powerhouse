@@ -5,6 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
+import os
 from typing import Any, Callable, Dict, List, Optional
 
 
@@ -92,3 +93,28 @@ class ResolverRegistry:
 
 
 ResolverFactory = Callable[[], Resolver]
+
+
+def register_default_resolvers(clear_existing: bool = False) -> None:
+    """Register built-in resolvers with credentials from the environment."""
+    if clear_existing:
+        ResolverRegistry.clear()
+
+    from .chromadb import ChromaDBResolver
+    from .ci import CIPipelineResolver
+    from .flyio import FlyioResolver
+    from .github import GitHubResolver
+    from .sentry import SentryResolver
+    from .vercel import VercelResolver
+
+    defaults = [
+        GitHubResolver(token=os.getenv("GITHUB_TOKEN", "")),
+        VercelResolver(token=os.getenv("VERCEL_TOKEN", "")),
+        FlyioResolver(token=os.getenv("FLY_API_TOKEN", "")),
+        SentryResolver(),
+        ChromaDBResolver(),
+        CIPipelineResolver(),
+    ]
+    for resolver in defaults:
+        if ResolverRegistry.get(resolver.resource_key) is None:
+            ResolverRegistry.register(resolver)

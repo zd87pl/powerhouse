@@ -5,3 +5,6 @@ pydantic
 pyyaml
 pyjwt
 httpx
+cryptography
+pytest
+requests

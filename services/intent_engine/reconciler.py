@@ -78,18 +78,32 @@ def reconcile_summary(results: List[ReconciliationResult]) -> Dict[str, Any]:
     by_status: Dict[str, int] = {}
     total_drifts = 0
     errors: List[str] = []
+    unhealthy_statuses = {
+        ResourceStatus.CREATING,
+        ResourceStatus.DRIFTED,
+        ResourceStatus.ERROR,
+        ResourceStatus.SKIPPED,
+        ResourceStatus.UNKNOWN,
+    }
     for r in results:
         key = r.status.value
         by_status[key] = by_status.get(key, 0) + 1
         total_drifts += len(r.drifts_found) + r.drifts_resolved
         if r.error_message:
             errors.append(f"{r.resource_key}: {r.error_message}")
+        elif r.status == ResourceStatus.SKIPPED:
+            errors.append(f"{r.resource_key}: {r.action_taken or 'skipped'}")
+    healthy = (
+        bool(results)
+        and not errors
+        and all(r.status not in unhealthy_statuses for r in results)
+    )
     return {
         "total_resources": len(results),
         "by_status": by_status,
         "total_drifts": total_drifts,
         "errors": errors,
-        "healthy": len(errors) == 0,
+        "healthy": healthy,
     }
 
 

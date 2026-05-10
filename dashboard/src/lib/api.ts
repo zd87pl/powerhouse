@@ -38,6 +38,13 @@ export interface AgentRun {
   completed_at: string | null;
 }
 
+export interface ApiKey {
+  id: string;
+  provider: string;
+  key_name: string;
+  created_at: string;
+}
+
 async function fetchAPI<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     headers: { "Content-Type": "application/json", ...options?.headers },
@@ -46,6 +53,9 @@ async function fetchAPI<T>(path: string, options?: RequestInit): Promise<T> {
   if (!res.ok) {
     const error = await res.text();
     throw new Error(error || `API error: ${res.status}`);
+  }
+  if (res.status === 204) {
+    return undefined as T;
   }
   return res.json();
 }
@@ -59,13 +69,19 @@ export const api = {
     update: (id: string, data: Partial<Project>) =>
       fetchAPI<Project>(`/projects/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
     delete: (id: string) => fetchAPI<void>(`/projects/${id}`, { method: "DELETE" }),
-    reconcile: (id: string, dryRun = false) =>
-      fetchAPI<ReconciliationRun>(`/projects/${id}/reconcile`, { method: "POST", body: JSON.stringify({ dry_run: dryRun }) }),
+    reconcile: (id: string, dryRun = false, intentYaml?: string) =>
+      fetchAPI<ReconciliationRun>(`/projects/${id}/reconcile`, { method: "POST", body: JSON.stringify({ dry_run: dryRun, intent_yaml: intentYaml }) }),
     reconciliations: (id: string) =>
       fetchAPI<ReconciliationRun[]>(`/projects/${id}/reconciliations`),
     triggerAgent: (id: string, agentType: string, inputSpec: string) =>
       fetchAPI<AgentRun>(`/projects/${id}/agents`, { method: "POST", body: JSON.stringify({ agent_type: agentType, input_spec: inputSpec }) }),
     agentRuns: (id: string) =>
       fetchAPI<AgentRun[]>(`/projects/${id}/agents`),
+  },
+  keys: {
+    list: () => fetchAPI<ApiKey[]>("/keys"),
+    create: (data: { provider: string; key_name: string; key_value: string }) =>
+      fetchAPI<ApiKey>("/keys", { method: "POST", body: JSON.stringify(data) }),
+    delete: (id: string) => fetchAPI<void>(`/keys/${id}`, { method: "DELETE" }),
   },
 };

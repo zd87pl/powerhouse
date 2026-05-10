@@ -24,3 +24,7 @@ export function statusColor(status: string): string {
     default: return "bg-slate-500/20 text-slate-400 border-slate-500/30"
   }
 }
+
+export function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}

@@ -1,10 +1,19 @@
 "use client";
 
 import { useState } from "react";
-import { Play, Loader2, Eye, EyeOff } from "lucide-react";
+import { Play, Loader2 } from "lucide-react";
 import { api, type ReconciliationRun } from "@/lib/api";
+import { errorMessage } from "@/lib/utils";
 
-export function IntentEditor({ projectId, initialYaml }: { projectId: string; initialYaml: string }) {
+export function IntentEditor({
+  projectId,
+  initialYaml,
+  onReconciled,
+}: {
+  projectId: string;
+  initialYaml: string;
+  onReconciled?: () => void;
+}) {
   const [yaml, setYaml] = useState(initialYaml || "");
   const [reconciling, setReconciling] = useState(false);
   const [dryRun, setDryRun] = useState(true);
@@ -16,10 +25,11 @@ export function IntentEditor({ projectId, initialYaml }: { projectId: string; in
     setError("");
     setResult(null);
     try {
-      const run = await api.projects.reconcile(projectId, dryRun);
+      const run = await api.projects.reconcile(projectId, dryRun, yaml);
       setResult(run);
-    } catch (e: any) {
-      setError(e.message);
+      onReconciled?.();
+    } catch (e: unknown) {
+      setError(errorMessage(e));
     } finally {
       setReconciling(false);
     }
@@ -81,6 +91,11 @@ export function IntentEditor({ projectId, initialYaml }: { projectId: string; in
                 <span key={r} className="text-xs px-2 py-1 bg-slate-800 rounded text-slate-400 font-mono">{r}</span>
               ))}
             </div>
+          )}
+          {result.drifts_found && (
+            <pre className="mt-3 max-h-40 overflow-auto rounded bg-slate-950 p-3 text-xs text-slate-400">
+              {JSON.stringify(result.drifts_found, null, 2)}
+            </pre>
           )}
           {result.error_message && (
             <p className="text-sm text-red-400 mt-2">{result.error_message}</p>

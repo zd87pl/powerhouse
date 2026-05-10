@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { Plus, Search, Loader2, Box, ArrowRight } from "lucide-react";
+import { Plus, Loader2, Box } from "lucide-react";
 import { api, type Project } from "@/lib/api";
-import { formatDate, statusColor } from "@/lib/utils";
+import { errorMessage, formatDate, statusColor } from "@/lib/utils";
 import { CreateProjectDialog } from "@/components/create-project-dialog";
 
 export default function DashboardPage() {
@@ -13,19 +13,21 @@ export default function DashboardPage() {
   const [error, setError] = useState("");
   const [showCreate, setShowCreate] = useState(false);
 
-  const fetchProjects = async () => {
+  const fetchProjects = useCallback(async () => {
     try {
       setLoading(true);
       const data = await api.projects.list();
       setProjects(data.projects);
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e: unknown) {
+      setError(errorMessage(e));
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  useEffect(() => { fetchProjects(); }, []);
+  useEffect(() => {
+    void Promise.resolve().then(fetchProjects);
+  }, [fetchProjects]);
 
   return (
     <div className="p-8">
