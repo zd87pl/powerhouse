@@ -508,7 +508,7 @@ async def build_project(data: BuildRequest = None, raw_data: Request = None):
         # Deploy to Vercel
         deploy_result = subprocess.run(
             ["vercel", "deploy", project_dir, "--prod", "--yes",
-             "--token", vercel_token, "--scope", "zd87pl"],
+             "--token", vercel_token],
             capture_output=True,
             text=True,
             timeout=60,
