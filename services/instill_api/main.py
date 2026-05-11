@@ -924,7 +924,6 @@ async def demo_parse(data: ParseRequest):
     to rule-based parsing.
     """
     import json
-    import re
 
     openrouter_key = os.getenv("OPENROUTER_API_KEY", "")
     if not openrouter_key:
