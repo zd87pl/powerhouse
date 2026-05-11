@@ -841,26 +841,11 @@ async def _validate_vercel_setup(
 @app.post("/parse", response_model=ParseResponse)
 async def parse_intent(
     data: ParseRequest,
-    request: Request,
-    tenant: Optional[Tenant] = None,
+    tenant: Tenant = Depends(get_current_tenant),
 ):
-    """Parse a natural language business description into a structured spec.
-    
-    Works without auth for the public demo. When authenticated, the tenant
-    context is used for rate limiting and preferences.
-    """
+    """Parse a natural language business description into a structured spec."""
     import json
     import re
-
-    # Try to get tenant from auth if not provided
-    if tenant is None:
-        try:
-            clerk_id = await get_clerk_user_id(request)
-            if clerk_id:
-                session = next(get_session())
-                tenant = session.query(Tenant).filter(Tenant.clerk_id == clerk_id).first()
-        except Exception:
-            pass
 
     openrouter_key = os.getenv("OPENROUTER_API_KEY", "")
     if not openrouter_key:
@@ -924,6 +909,71 @@ Rules:
             else:
                 return _fallback_parse(data.description)
 
+    except Exception:
+        return _fallback_parse(data.description)
+
+
+# ── Demo (public, no auth required) ──
+
+
+@app.post("/api/demo/parse", response_model=ParseResponse)
+async def demo_parse(data: ParseRequest):
+    """Public parse endpoint for the demo sandbox. No auth required.
+    
+    Uses the instance's OpenRouter key if available, otherwise falls back
+    to rule-based parsing.
+    """
+    import json
+    import re
+
+    openrouter_key = os.getenv("OPENROUTER_API_KEY", "")
+    if not openrouter_key:
+        return _fallback_parse(data.description)
+
+    prompt = f"""You are a business specification parser. Given a natural language description, 
+extract the structured intent as JSON. Return ONLY valid JSON, no other text.
+
+Description: {data.description}
+
+Return JSON with these exact keys:
+{{
+  "project": "project_slug_here",
+  "stack": "nextjs" or "fastapi" or "remix" or "astro",
+  "market": "2-letter country code or global",
+  "features": ["list", "of", "features"],
+  "tools": ["list", "of", "required", "tools"],
+  "explanation": "Brief explanation of what was understood",
+  "required_keys": ["list", "of", "API", "key", "names"]
+}}"""
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {openrouter_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": "openai/gpt-4o-mini",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.1,
+                },
+            )
+            if resp.is_error:
+                return _fallback_parse(data.description)
+            body = resp.json()
+            content = body["choices"][0]["message"]["content"]
+            parsed = json.loads(content.strip().removesuffix("```").removeprefix("```json").removeprefix("```").strip())
+            return ParseResponse(
+                project=parsed.get("project", "my-project"),
+                stack=parsed.get("stack", "nextjs"),
+                market=parsed.get("market", "global"),
+                features=parsed.get("features", []),
+                tools=parsed.get("tools", []),
+                explanation=parsed.get("explanation", ""),
+                required_keys=parsed.get("required_keys", ["GitHub", "Vercel"]),
+            )
     except Exception:
         return _fallback_parse(data.description)
 

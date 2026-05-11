@@ -28,7 +28,7 @@ export default function DemoPage() {
     setError("");
     setResult(null);
     try {
-      const res = await fetch(`${API_URL}/parse`, {
+      const res = await fetch(`${API_URL}/demo/parse`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ description: description.trim() }),
