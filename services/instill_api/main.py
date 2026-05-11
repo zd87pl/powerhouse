@@ -841,11 +841,26 @@ async def _validate_vercel_setup(
 @app.post("/parse", response_model=ParseResponse)
 async def parse_intent(
     data: ParseRequest,
-    tenant: Tenant = Depends(get_current_tenant),
+    request: Request,
+    tenant: Optional[Tenant] = None,
 ):
-    """Parse a natural language business description into a structured spec."""
+    """Parse a natural language business description into a structured spec.
+    
+    Works without auth for the public demo. When authenticated, the tenant
+    context is used for rate limiting and preferences.
+    """
     import json
     import re
+
+    # Try to get tenant from auth if not provided
+    if tenant is None:
+        try:
+            clerk_id = await get_clerk_user_id(request)
+            if clerk_id:
+                session = next(get_session())
+                tenant = session.query(Tenant).filter(Tenant.clerk_id == clerk_id).first()
+        except Exception:
+            pass
 
     openrouter_key = os.getenv("OPENROUTER_API_KEY", "")
     if not openrouter_key:

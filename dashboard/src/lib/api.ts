@@ -71,6 +71,8 @@ export interface SetupProviderStatus {
   required_env: string[];
   missing_env: string[];
   docs_url: string;
+  signup_url?: string;
+  referral_url?: string;
   next_action: string;
 }
 
