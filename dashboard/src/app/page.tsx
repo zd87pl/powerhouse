@@ -3,7 +3,6 @@ import {
   ArrowRight,
   Play,
   Zap,
-  Github,
   Globe,
   CheckCircle2,
   KeyRound,
@@ -62,7 +61,7 @@ export default function LandingPage() {
               rel="noreferrer"
               className="flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
             >
-              <Github className="h-4 w-4" />
+              <span className="font-mono text-xs">★</span>
               <span className="hidden sm:inline">GitHub</span>
             </a>
           </div>
