@@ -120,6 +120,8 @@ SETUP_PROVIDERS = [
         "required": True,
         "required_env": ["GITHUB_TOKEN", "GITHUB_OWNER"],
         "docs_url": "https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens",
+        "signup_url": "https://github.com/signup",
+        "referral_url": None,
         "next_action": "Add a GitHub token and owner so Powerhouse can inspect or create repositories.",
     },
     {
@@ -128,6 +130,8 @@ SETUP_PROVIDERS = [
         "required": True,
         "required_env": ["VERCEL_TOKEN"],
         "docs_url": "https://vercel.com/account/settings/tokens",
+        "signup_url": "https://vercel.com/signup",
+        "referral_url": None,
         "next_action": "Add a Vercel token so Powerhouse can deploy generated projects.",
     },
     {
@@ -136,6 +140,8 @@ SETUP_PROVIDERS = [
         "required": False,
         "required_env": ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"],
         "docs_url": "https://supabase.com/docs/guides/api/api-keys",
+        "signup_url": "https://supabase.com/dashboard/sign-in",
+        "referral_url": None,
         "next_action": "Add Supabase credentials when a project needs database or auth provisioning.",
     },
     {
@@ -144,6 +150,8 @@ SETUP_PROVIDERS = [
         "required": False,
         "required_env": ["SENTRY_AUTH_TOKEN", "SENTRY_ORG"],
         "docs_url": "https://docs.sentry.io/api/auth/",
+        "signup_url": "https://sentry.io/signup/",
+        "referral_url": None,
         "next_action": "Add Sentry credentials to wire production error tracking and autofix inputs.",
     },
     {
@@ -152,6 +160,8 @@ SETUP_PROVIDERS = [
         "required": False,
         "required_env": ["OPENROUTER_API_KEY"],
         "docs_url": "https://openrouter.ai/settings/keys",
+        "signup_url": "https://openrouter.ai/sign-up",
+        "referral_url": os.getenv("OPENROUTER_REFERRAL_URL"),
         "next_action": "Add an OpenRouter key to enable LLM-backed parsing and agent workflows.",
     },
     {
@@ -160,6 +170,8 @@ SETUP_PROVIDERS = [
         "required": False,
         "required_env": ["STRIPE_SECRET_KEY"],
         "docs_url": "https://docs.stripe.com/keys",
+        "signup_url": "https://dashboard.stripe.com/register",
+        "referral_url": None,
         "next_action": "Add Stripe credentials when a project needs billing or checkout.",
     },
     {
@@ -168,6 +180,8 @@ SETUP_PROVIDERS = [
         "required": False,
         "required_env": ["FLY_API_TOKEN"],
         "docs_url": "https://fly.io/user/personal_access_tokens",
+        "signup_url": "https://fly.io/app/sign-up",
+        "referral_url": None,
         "next_action": "Add a Fly.io token when a project should deploy outside Vercel.",
     },
 ]
@@ -210,6 +224,8 @@ def _setup_provider_status(
         "required_env": required_env,
         "missing_env": missing_env,
         "docs_url": provider_config["docs_url"],
+        "signup_url": provider_config.get("signup_url"),
+        "referral_url": provider_config.get("referral_url"),
         "next_action": next_action,
     }
 

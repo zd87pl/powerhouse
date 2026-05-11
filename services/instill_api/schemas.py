@@ -78,6 +78,8 @@ class SetupProviderStatus(BaseModel):
     required_env: List[str]
     missing_env: List[str]
     docs_url: str
+    signup_url: Optional[str] = None
+    referral_url: Optional[str] = None
     next_action: str
 
 
