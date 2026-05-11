@@ -121,10 +121,10 @@ export default function SetupPage() {
       const success = result.status === "connected" || result.status === "passed";
       if (provider === "github") {
         setGithubValid(success);
-        setGithubAccount(result.account?.login || "");
+        setGithubAccount((result.account as Record<string, string>)?.login || "");
       } else if (provider === "vercel") {
         setVercelValid(success);
-        setVercelAccount(result.account?.email || result.account?.username || "");
+        setVercelAccount((result.account as Record<string, string>)?.email || (result.account as Record<string, string>)?.username || "");
       }
       await fetchSetup();
       return success;
