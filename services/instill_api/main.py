@@ -1667,7 +1667,7 @@ export default function AboutPage() {{
           <p>{subtitle}</p>
           <p>Built with the Powerhouse Agent Swarm: Architect → Coder → DevOps. This entire project was generated from a natural language description in seconds, then pushed to GitHub and deployed to Vercel automatically.</p>
           <div className="flex flex-wrap gap-2 pt-4">
-            <span className="px-3 py-1.5 bg-bg border border-border rounded-full text-xs">🎯 {{market.upper()}}</span>
+            <span className="px-3 py-1.5 bg-bg border border-border rounded-full text-xs">🎯 {market}</span>
             <span className="px-3 py-1.5 bg-bg border border-border rounded-full text-xs">⚡ Next.js 15</span>
             <span className="px-3 py-1.5 bg-bg border border-border rounded-full text-xs">🎨 Tailwind v4</span>
             <span className="px-3 py-1.5 bg-bg border border-border rounded-full text-xs">🤖 AI-Generated</span>
@@ -2233,10 +2233,10 @@ async def trigger_agent(
 
     try:
         output = _run_agent(data.agent_type, data.input_spec, project.intent_yaml)
-        run.status = "failed"
+        run.status = "succeeded"
         run.output = output
         run.completed_at = datetime.now(timezone.utc)
-        project_run.status = "failed"
+        project_run.status = "succeeded"
         project_run.summary = output
         project_run.log = output
         project_run.completed_at = run.completed_at
