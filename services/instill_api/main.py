@@ -919,7 +919,7 @@ Rules:
 @app.post("/api/demo/parse", response_model=ParseResponse)
 async def demo_parse(data: ParseRequest):
     """Public parse endpoint for the demo sandbox. No auth required.
-    
+
     Uses the instance's OpenRouter key if available, otherwise falls back
     to rule-based parsing.
     """
@@ -963,7 +963,13 @@ Return JSON with these exact keys:
                 return _fallback_parse(data.description)
             body = resp.json()
             content = body["choices"][0]["message"]["content"]
-            parsed = json.loads(content.strip().removesuffix("```").removeprefix("```json").removeprefix("```").strip())
+            parsed = json.loads(
+                content.strip()
+                .removesuffix("```")
+                .removeprefix("```json")
+                .removeprefix("```")
+                .strip()
+            )
             return ParseResponse(
                 project=parsed.get("project", "my-project"),
                 stack=parsed.get("stack", "nextjs"),
@@ -1667,7 +1673,7 @@ export default function AboutPage() {{
           <p>{subtitle}</p>
           <p>Built with the Powerhouse Agent Swarm: Architect → Coder → DevOps. This entire project was generated from a natural language description in seconds, then pushed to GitHub and deployed to Vercel automatically.</p>
           <div className="flex flex-wrap gap-2 pt-4">
-            <span className="px-3 py-1.5 bg-bg border border-border rounded-full text-xs">🎯 {{market.upper()}}</span>
+            <span className="px-3 py-1.5 bg-bg border border-border rounded-full text-xs">🎯 {market}</span>
             <span className="px-3 py-1.5 bg-bg border border-border rounded-full text-xs">⚡ Next.js 15</span>
             <span className="px-3 py-1.5 bg-bg border border-border rounded-full text-xs">🎨 Tailwind v4</span>
             <span className="px-3 py-1.5 bg-bg border border-border rounded-full text-xs">🤖 AI-Generated</span>
@@ -2233,10 +2239,10 @@ async def trigger_agent(
 
     try:
         output = _run_agent(data.agent_type, data.input_spec, project.intent_yaml)
-        run.status = "failed"
+        run.status = "succeeded"
         run.output = output
         run.completed_at = datetime.now(timezone.utc)
-        project_run.status = "failed"
+        project_run.status = "succeeded"
         project_run.summary = output
         project_run.log = output
         project_run.completed_at = run.completed_at
