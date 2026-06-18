@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Autofix: error diagnosis
+- Heuristic error-diagnosis engine (`services/instill_api/diagnosis.py`): classifies a
+  stack trace into category, severity, root cause, concrete fix steps, and the files most
+  likely involved. Deterministic and dependency-free — runs with no API keys.
+- Recognises ~25 common Python and JS/TS/Next.js failure modes (missing dependency,
+  null/None reference, missing key, connection refused, DB constraint, hydration mismatch,
+  render loop, 5xx, rate limit, and more), with a generic triage fallback for the rest.
+- `POST /api/demo/diagnose` (public) and `POST /api/diagnose` (authenticated) endpoints,
+  LLM-enriched via OpenRouter when a key is present, heuristic otherwise.
+- Wired the `autofix` agent type into the control plane — agent runs now return a real
+  diagnosis instead of a "not wired" placeholder.
+- 15-test suite covering the rule table, file extraction, determinism, and API wiring.
+
+### Fixed
+- Agent runs that completed successfully were recorded as `failed`; they now report `succeeded`.
+- `swarm_build` emitted an About page with invalid JSX (`{{market.upper()}}`) that broke the
+  generated project's build.
+
 ### Added — Phase 3: Declarative Intent Engine
 - Intent Engine service: `.powerhouse.yml` reconciler that discovers intent files and reconciles declared vs. actual infrastructure state
 - Schema module: full data model for intent files (project, deploy, monitoring, memory, CI configs)

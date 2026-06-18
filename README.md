@@ -24,7 +24,7 @@
 2. **Project tracking** through a FastAPI control plane and Next.js dashboard
 3. **Infrastructure reconciliation** with explicit synced, drifted, skipped, and error states
 4. **Credential management** with encrypted-at-rest API keys
-5. **Agent/runtime scaffolding** for future autofix, swarm, and business-agent loops
+5. **Autofix diagnosis** — turns a stack trace into root cause, severity, and concrete fix steps (deterministic heuristic core, no API key required; LLM-enriched when one is configured). Swarm and business-agent loops remain scaffolding.
 
 The product goal is larger: live scaffolding, deploys, monitoring, and self-healing PRs. Those paths are being hardened behind explicit auth, credentials, and quota gates before they are treated as production-ready.
 
@@ -74,13 +74,17 @@ YOU: "Build me a store"
      ▼  3AM: Bug detected
 ┌────────────────────────────────────────────────────────────┐
 │  🤖 AUTOFIX DAEMON                                          │
-│  → Reads stack trace                                        │
-│  → Diagnoses root cause                                     │
-│  → Target: generate patch, open PR, verify CI               │
+│  → Reads stack trace                          ✅ works      │
+│  → Diagnoses root cause + fix steps           ✅ works      │
+│  → Target: generate patch, open PR, verify CI 🏗️ planned    │
 └────────────────────────────────────────────────────────────┘
 ```
 
-> **Current status:** the control plane, dashboard, intent engine, and agent primitives exist. End-to-end autonomous repair is not production-ready yet.
+> **Current status:** the control plane, dashboard, intent engine, and error
+> diagnosis work today. Diagnosis (`error → root cause → fix steps`) runs with
+> no API key and is exposed at `/api/diagnose`, `/api/demo/diagnose`, and the
+> `autofix` agent. The closing stages — automated patch, PR, and CI verification
+> — are still in progress.
 
 ---
 
@@ -174,6 +178,14 @@ curl -X POST http://localhost:8080/api/projects \
 # 6. Trigger reconciliation
 curl -X POST http://localhost:8080/api/projects/<id>/reconcile
 # → Infrastructure checks are reported as synced, drifted, skipped, or error
+
+# 7. Diagnose an error (no auth, no API key needed)
+curl -X POST http://localhost:8080/api/demo/diagnose \
+  -H "Content-Type: application/json" \
+  -d '{"message": "TypeError: Cannot read properties of undefined (reading \"map\")"}'
+# → {"category": "null_reference", "severity": "high",
+#    "summary": "Read a property ('map') off undefined/null.",
+#    "suggested_fix": ["Use optional chaining (obj?.map) ...", ...], ...}
 ```
 
 `run_api.py` sets local-only development auth and dev secret encryption defaults. In production, configure Clerk, `POWERHOUSE_SECRET_KEY`, explicit `POWERHOUSE_CORS_ORIGINS`, and leave `POWERHOUSE_ALLOW_DEV_AUTH` disabled.

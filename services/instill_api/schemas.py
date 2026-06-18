@@ -200,6 +200,26 @@ class ParseResponse(BaseModel):
     required_keys: List[str]
 
 
+# ── Error Diagnosis (autofix) ──
+
+
+class DiagnoseRequest(BaseModel):
+    title: str = Field("", max_length=500)
+    message: str = Field("", max_length=8000)
+    stack_trace: str = Field("", max_length=20000)
+
+
+class DiagnoseResponse(BaseModel):
+    category: str
+    severity: str  # high | medium | low
+    summary: str
+    root_cause: str
+    suggested_fix: List[str]
+    likely_files: List[str]
+    confidence: str  # high | medium | low
+    source: str  # heuristic | llm
+
+
 # ── Project Builder ──
 
 

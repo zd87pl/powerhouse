@@ -33,6 +33,8 @@ from .schemas import (
     ApiKeyResponse,
     BuildRequest,
     BuildResponse,
+    DiagnoseRequest,
+    DiagnoseResponse,
     HealthResponse,
     ParseRequest,
     ParseResponse,
@@ -46,6 +48,7 @@ from .schemas import (
     SetupStatusResponse,
     SetupValidationResponse,
 )
+from .diagnosis import diagnose_error
 from .secrets import SecretConfigError, decrypt_secret, encrypt_secret
 
 
@@ -1127,6 +1130,107 @@ def _fallback_parse(description: str) -> ParseResponse:
         explanation=explanation,
         required_keys=required_keys,
     )
+
+
+# ── Error Diagnosis / Autofix (heuristic, LLM-optional) ──
+
+
+async def _llm_diagnose_dict(req: DiagnoseRequest) -> Optional[dict]:
+    """Optional LLM-backed diagnosis. Returns a parsed dict, or None on any failure."""
+    openrouter_key = os.getenv("OPENROUTER_API_KEY", "")
+    if not openrouter_key:
+        return None
+
+    import json
+
+    error_text = "\n".join(
+        part
+        for part in (
+            f"Title: {req.title}" if req.title else "",
+            f"Message: {req.message}" if req.message else "",
+            f"Stack trace:\n{req.stack_trace}" if req.stack_trace else "",
+        )
+        if part
+    )
+    if not error_text.strip():
+        return None
+
+    prompt = (
+        "You are an expert software engineer triaging a production error. "
+        "Return ONLY valid JSON, no prose, with these exact keys: "
+        '{"category": string, "severity": "high"|"medium"|"low", '
+        '"summary": string, "root_cause": string, '
+        '"suggested_fix": [string], "likely_files": [string], '
+        '"confidence": "high"|"medium"|"low"}.\n\n'
+        f"{error_text}"
+    )
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {openrouter_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": "openai/gpt-4o-mini",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.1,
+                },
+            )
+            if resp.is_error:
+                return None
+            content = resp.json()["choices"][0]["message"]["content"]
+            data = json.loads(
+                content.strip()
+                .removesuffix("```")
+                .removeprefix("```json")
+                .removeprefix("```")
+                .strip()
+            )
+    except Exception:
+        return None
+
+    return data if isinstance(data, dict) and data.get("summary") else None
+
+
+async def _diagnose(req: DiagnoseRequest) -> DiagnoseResponse:
+    """Diagnose an error: deterministic heuristic baseline, LLM-enriched when keyed."""
+    base = diagnose_error(
+        title=req.title, message=req.message, stack_trace=req.stack_trace
+    )
+    llm = await _llm_diagnose_dict(req)
+    if llm:
+        base.category = str(llm.get("category") or base.category)
+        base.severity = str(llm.get("severity") or base.severity).lower()
+        base.summary = str(llm.get("summary") or base.summary)
+        base.root_cause = str(llm.get("root_cause") or base.root_cause)
+        if isinstance(llm.get("suggested_fix"), list) and llm["suggested_fix"]:
+            base.suggested_fix = [str(s) for s in llm["suggested_fix"]][:6]
+        if isinstance(llm.get("likely_files"), list) and llm["likely_files"]:
+            base.likely_files = [str(f) for f in llm["likely_files"]][:6]
+        base.confidence = str(llm.get("confidence") or base.confidence).lower()
+        base.source = "llm"
+    return DiagnoseResponse(**base.to_dict())
+
+
+@app.post("/api/demo/diagnose", response_model=DiagnoseResponse)
+async def demo_diagnose(data: DiagnoseRequest):
+    """Public autofix-style error diagnosis for the demo sandbox. No auth required.
+
+    Heuristic by default (works with zero keys); uses the instance's OpenRouter
+    key for a richer diagnosis when one is configured.
+    """
+    return await _diagnose(data)
+
+
+@app.post("/api/diagnose", response_model=DiagnoseResponse)
+async def diagnose_endpoint(
+    data: DiagnoseRequest,
+    tenant: Tenant = Depends(get_current_tenant),
+):
+    """Authenticated error diagnosis — the first stage of the autofix loop."""
+    return await _diagnose(data)
 
 
 # ── Project Builder ──
@@ -2396,7 +2500,20 @@ def _run_reconciliation(intent_yaml: str, dry_run: bool = False):
 
 
 def _run_agent(agent_type: str, input_spec: str, intent_yaml: str = "") -> str:
-    """Return an explicit unsupported-agent message until the runtime is wired."""
+    """Run a synchronous, deterministic agent task.
+
+    The ``autofix`` agent performs heuristic error diagnosis on the supplied
+    error text (``input_spec``). Other agent types are not wired to a runtime
+    yet and return an explicit message.
+    """
+    if agent_type == "autofix":
+        stripped = input_spec.strip()
+        first_line = stripped.splitlines()[0] if stripped else ""
+        diagnosis = diagnose_error(
+            title=first_line, message=input_spec, stack_trace=input_spec
+        )
+        return diagnosis.format_text()
+
     return (
         f"{agent_type} agent runtime is not wired to this API yet. "
         "Use reconciliation for infrastructure checks; agent execution needs the "
