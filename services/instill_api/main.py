@@ -919,7 +919,7 @@ Rules:
 @app.post("/api/demo/parse", response_model=ParseResponse)
 async def demo_parse(data: ParseRequest):
     """Public parse endpoint for the demo sandbox. No auth required.
-    
+
     Uses the instance's OpenRouter key if available, otherwise falls back
     to rule-based parsing.
     """
@@ -963,7 +963,13 @@ Return JSON with these exact keys:
                 return _fallback_parse(data.description)
             body = resp.json()
             content = body["choices"][0]["message"]["content"]
-            parsed = json.loads(content.strip().removesuffix("```").removeprefix("```json").removeprefix("```").strip())
+            parsed = json.loads(
+                content.strip()
+                .removesuffix("```")
+                .removeprefix("```json")
+                .removeprefix("```")
+                .strip()
+            )
             return ParseResponse(
                 project=parsed.get("project", "my-project"),
                 stack=parsed.get("stack", "nextjs"),
