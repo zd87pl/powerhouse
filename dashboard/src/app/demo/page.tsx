@@ -2,9 +2,26 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Loader2, Play, Sparkles, Tag, Wrench, Globe } from "lucide-react";
+import {
+  ArrowRight,
+  Loader2,
+  Play,
+  Sparkles,
+  Tag,
+  Wrench,
+  Globe,
+  Bug,
+  AlertTriangle,
+  FileCode,
+} from "lucide-react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://instill-api.fly.dev/api";
+
+const SEVERITY_STYLES: Record<string, string> = {
+  high: "border-red-500/20 bg-red-500/5 text-red-300",
+  medium: "border-amber-500/20 bg-amber-500/5 text-amber-300",
+  low: "border-zinc-500/20 bg-zinc-500/5 text-zinc-300",
+};
 
 interface ParseResult {
   project: string;
@@ -16,11 +33,27 @@ interface ParseResult {
   required_keys: string[];
 }
 
+interface DiagnoseResult {
+  category: string;
+  severity: string;
+  summary: string;
+  root_cause: string;
+  suggested_fix: string[];
+  likely_files: string[];
+  confidence: string;
+  source: string;
+}
+
 export default function DemoPage() {
   const [description, setDescription] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ParseResult | null>(null);
   const [error, setError] = useState("");
+
+  const [errorText, setErrorText] = useState("");
+  const [diagLoading, setDiagLoading] = useState(false);
+  const [diagResult, setDiagResult] = useState<DiagnoseResult | null>(null);
+  const [diagError, setDiagError] = useState("");
 
   const handleParse = async () => {
     if (!description.trim()) return;
@@ -43,6 +76,30 @@ export default function DemoPage() {
       setError(e instanceof Error ? e.message : "Something went wrong");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDiagnose = async () => {
+    if (!errorText.trim()) return;
+    setDiagLoading(true);
+    setDiagError("");
+    setDiagResult(null);
+    try {
+      const res = await fetch(`${API_URL}/demo/diagnose`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: errorText.trim() }),
+      });
+      if (!res.ok) {
+        const err = await res.text();
+        throw new Error(err || `API error: ${res.status}`);
+      }
+      const data: DiagnoseResult = await res.json();
+      setDiagResult(data);
+    } catch (e: unknown) {
+      setDiagError(e instanceof Error ? e.message : "Something went wrong");
+    } finally {
+      setDiagLoading(false);
     }
   };
 
@@ -206,6 +263,144 @@ export default function DemoPage() {
             </div>
           </div>
         )}
+
+        {/* ── Autofix diagnosis ── */}
+        <div className="mt-16 pt-10 border-t border-white/[0.06]">
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center gap-2 rounded-full border border-rose-500/20 bg-rose-500/5 px-4 py-1.5 text-sm text-rose-300 mb-5">
+              <Bug className="h-3.5 w-3.5" />
+              Autofix · Self-healing
+            </div>
+            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">
+              Paste an error, get a fix plan
+            </h2>
+            <p className="mt-3 text-zinc-400 max-w-md mx-auto">
+              The first stage of the autofix loop: drop in a stack trace and
+              Instill diagnoses the root cause — no keys required.
+            </p>
+          </div>
+
+          {/* Input */}
+          <div className="rounded-2xl border border-white/[0.06] bg-white/[0.015] backdrop-blur-sm p-6 mb-6">
+            <label className="block text-sm font-medium text-zinc-300 mb-3">
+              Paste an error message or stack trace
+            </label>
+            <textarea
+              value={errorText}
+              onChange={(e) => setErrorText(e.target.value)}
+              placeholder={
+                "e.g. TypeError: Cannot read properties of undefined (reading 'map')\n  at ProductList (src/app/products/page.tsx:42:18)"
+              }
+              rows={4}
+              className="w-full rounded-xl border border-white/[0.08] bg-zinc-900/50 px-4 py-3 text-sm text-zinc-200 font-mono placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-rose-500/50 focus:border-rose-500/50 resize-none"
+            />
+            <button
+              onClick={handleDiagnose}
+              disabled={diagLoading || !errorText.trim()}
+              className="mt-4 inline-flex items-center gap-2 rounded-xl bg-rose-500 px-6 py-2.5 text-sm font-medium text-white hover:bg-rose-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+            >
+              {diagLoading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Diagnosing...
+                </>
+              ) : (
+                <>
+                  <Bug className="h-4 w-4" />
+                  Diagnose
+                </>
+              )}
+            </button>
+          </div>
+
+          {/* Error */}
+          {diagError && (
+            <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-4 text-sm text-red-400 mb-6">
+              {diagError}
+            </div>
+          )}
+
+          {/* Loading skeleton */}
+          {diagLoading && (
+            <div className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-6 animate-pulse">
+              <div className="h-4 w-40 bg-white/[0.04] rounded mb-4" />
+              <div className="h-3 w-56 bg-white/[0.03] rounded mb-3" />
+              <div className="h-3 w-full bg-white/[0.03] rounded mb-2" />
+              <div className="h-3 w-2/3 bg-white/[0.03] rounded" />
+            </div>
+          )}
+
+          {/* Result */}
+          {diagResult && (
+            <div className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-6">
+              <div className="flex items-center gap-2 flex-wrap mb-4">
+                <span
+                  className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-medium ${
+                    SEVERITY_STYLES[diagResult.severity] || SEVERITY_STYLES.medium
+                  }`}
+                >
+                  <AlertTriangle className="h-3 w-3" />
+                  {diagResult.severity} severity
+                </span>
+                <span className="rounded-full border border-white/[0.06] bg-white/[0.02] px-2.5 py-1 text-xs text-zinc-400 font-mono">
+                  {diagResult.category}
+                </span>
+                <span className="ml-auto text-xs text-zinc-600">
+                  {diagResult.source === "llm" ? "LLM-assisted" : "heuristic"} ·{" "}
+                  {diagResult.confidence} confidence
+                </span>
+              </div>
+
+              <h3 className="text-lg font-semibold text-white mb-2">
+                {diagResult.summary}
+              </h3>
+              <p className="text-sm text-zinc-400 leading-relaxed mb-5">
+                {diagResult.root_cause}
+              </p>
+
+              {diagResult.suggested_fix.length > 0 && (
+                <div className="mb-5">
+                  <div className="flex items-center gap-1.5 text-xs text-zinc-500 mb-2">
+                    <Wrench className="h-3 w-3" />
+                    Suggested fix
+                  </div>
+                  <ol className="space-y-2">
+                    {diagResult.suggested_fix.map((step, i) => (
+                      <li
+                        key={i}
+                        className="flex gap-2.5 text-sm text-zinc-300 rounded-xl bg-white/[0.02] border border-white/[0.03] px-3 py-2"
+                      >
+                        <span className="text-rose-400 font-mono text-xs mt-0.5">
+                          {i + 1}
+                        </span>
+                        {step}
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              )}
+
+              {diagResult.likely_files.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-1.5 text-xs text-zinc-500 mb-2">
+                    <FileCode className="h-3 w-3" />
+                    Likely files
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {diagResult.likely_files.map((f) => (
+                      <span
+                        key={f}
+                        className="rounded-full border border-white/[0.06] bg-white/[0.02] px-2.5 py-0.5 text-xs text-zinc-400 font-mono"
+                      >
+                        {f}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
