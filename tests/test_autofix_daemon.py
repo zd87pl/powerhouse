@@ -171,3 +171,30 @@ def test_process_alert_opens_pr_when_changes_present(gh, monkeypatch):
     assert alert["status"] == "pr_opened"
     assert captured["repo"] == "o/r"
     assert captured["changes"][0]["path"] == "src/a.ts"
+
+
+def test_diagnose_falls_back_to_heuristic_without_llm(monkeypatch):
+    monkeypatch.setattr(daemon, "OPENROUTER_API_KEY", "")
+    result = daemon.diagnose("KeyError", "KeyError: 'tenant_id'")
+    assert "Skipped" not in result["diagnosis"]
+    assert "tenant_id" in result["diagnosis"]
+    assert result["category"] == "missing_key"
+    assert result["source"] == "heuristic"
+    assert result["changes"] == []  # heuristic proposes no code changes
+
+
+def test_heuristic_alert_is_triaged_without_opening_a_pr(monkeypatch):
+    monkeypatch.setattr(daemon, "OPENROUTER_API_KEY", "")
+    monkeypatch.setattr(daemon, "GITHUB_TOKEN", "tok")
+
+    def boom(*args, **kwargs):
+        raise AssertionError("must not open a PR without proposed changes")
+
+    monkeypatch.setattr(daemon, "open_github_pr", boom)
+
+    alert = {"id": "h1", "repo": "o/r", "title": "KeyError", "message": "KeyError: 'x'"}
+    daemon.process_alert(alert)
+
+    assert "pr_url" not in alert
+    assert alert["status"] != "pr_opened"
+    assert alert["diagnosis"]

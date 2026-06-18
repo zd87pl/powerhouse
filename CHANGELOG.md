@@ -20,6 +20,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   diagnosis instead of a "not wired" placeholder.
 - 15-test suite covering the rule table, file extraction, determinism, and API wiring.
 
+### Added — Autofix: closing the loop
+- Autofix daemon now commits real patches: `commit_file_changes` builds a commit via the
+  GitHub Git Data API (blob → tree → commit → ref), so opened PRs contain the proposed fix
+  instead of an empty diff. `diagnose` asks the LLM for full-file replacements; PRs open
+  (status `pr_opened`) only when a target repo and a confident change are both present.
+- Daemon falls back to the shared heuristic engine when no OpenRouter key is set (or the LLM
+  call fails), so Sentry-sourced alerts get triaged instead of silently skipped. Heuristic
+  diagnoses propose no code changes, so they never open a PR on their own.
+- Demo sandbox gained an error-diagnosis panel (`/demo`): paste a stack trace, get severity,
+  root cause, fix steps, and likely files from `/api/demo/diagnose` — no keys required.
+- 8 tests covering the daemon commit/PR flow and heuristic fallback.
+
 ### Fixed
 - Agent runs that completed successfully were recorded as `failed`; they now report `succeeded`.
 - `swarm_build` emitted an About page with invalid JSX (`{{market.upper()}}`) that broke the

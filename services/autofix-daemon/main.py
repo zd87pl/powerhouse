@@ -4,11 +4,20 @@ Autofix Daemon — Polls Sentry for new errors, diagnoses with LLM, opens GitHub
 
 import json
 import os
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
+
+# Make the shared heuristic diagnosis engine importable when run as a script
+# (services/autofix-daemon/ is not an installed package).
+_REPO_ROOT = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+)
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
 
 # Configuration
 SENTRY_AUTH_TOKEN = os.getenv("SENTRY_AUTH_TOKEN", "")
@@ -57,10 +66,42 @@ def fetch_sentry_issues() -> list[dict]:
     return resp.json()
 
 
+def _heuristic_diagnosis(error_title: str, error_message: str) -> dict:
+    """Offline fallback diagnosis using the shared heuristic engine.
+
+    Produces a real root-cause read (no API key needed) so Sentry-sourced
+    alerts get triaged instead of silently skipped. It does not propose code
+    changes, so it never opens a PR on its own.
+    """
+    try:
+        from services.instill_api.diagnosis import diagnose_error
+    except Exception:
+        return {
+            "diagnosis": "Skipped: no LLM API key and heuristic engine unavailable",
+            "files": [],
+            "changes": [],
+        }
+
+    d = diagnose_error(
+        title=error_title, message=error_message, stack_trace=error_message
+    )
+    text = f"{d.summary} {d.root_cause}"
+    if d.suggested_fix:
+        text += " Fix: " + "; ".join(d.suggested_fix)
+    return {
+        "diagnosis": text,
+        "category": d.category,
+        "severity": d.severity,
+        "files": d.likely_files,
+        "changes": [],
+        "source": "heuristic",
+    }
+
+
 def diagnose(error_title: str, error_message: str) -> dict:
-    """Use LLM to diagnose the error and propose a fix."""
+    """Diagnose an error: LLM when a key is configured, heuristic otherwise."""
     if not OPENROUTER_API_KEY:
-        return {"diagnosis": "Skipped: no LLM API key configured", "patch": None}
+        return _heuristic_diagnosis(error_title, error_message)
 
     system_prompt = (
         "You are an expert software engineer. Analyze the error and produce:\n"
@@ -93,13 +134,17 @@ def diagnose(error_title: str, error_message: str) -> dict:
     )
 
     if resp.status_code != 200:
-        return {"diagnosis": f"LLM error: {resp.status_code}", "patch": None}
+        print(f"LLM error {resp.status_code}; falling back to heuristic diagnosis")
+        return _heuristic_diagnosis(error_title, error_message)
 
     try:
         content = resp.json()["choices"][0]["message"]["content"]
-        return json.loads(content)
+        parsed = json.loads(content)
+        parsed.setdefault("source", "llm")
+        return parsed
     except Exception as e:
-        return {"diagnosis": f"Parse error: {e}", "patch": None}
+        print(f"LLM parse error ({e}); falling back to heuristic diagnosis")
+        return _heuristic_diagnosis(error_title, error_message)
 
 
 def _gh_headers() -> dict:
