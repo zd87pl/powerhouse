@@ -77,9 +77,12 @@ export function CreateProjectDialog({
               type="text"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="A brief description"
+              placeholder="Describe the business, e.g. plus-size fashion store for Poland with BLIK"
               className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
             />
+            <p className="mt-1 text-xs text-slate-500">
+              Leave the intent below empty and Instill will generate it from this description.
+            </p>
           </div>
 
           <div>

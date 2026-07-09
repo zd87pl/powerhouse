@@ -20,11 +20,11 @@
 
 **Powerhouse is an early-stage autonomous engineering harness.** You give it a business idea or `.powerhouse.yml` intent file. The current codebase provides:
 
-1. **Intent parsing** from natural language into a structured app spec
-2. **Project tracking** through a FastAPI control plane and Next.js dashboard
-3. **Infrastructure reconciliation** with explicit synced, drifted, skipped, and error states
-4. **Credential management** with encrypted-at-rest API keys
-5. **Agent/runtime scaffolding** for future autofix, swarm, and business-agent loops
+1. **Intent parsing** from natural language into a structured spec **and a ready-to-use `.powerhouse.yml`** — describing a business is enough; no YAML required
+2. **Project tracking** through a FastAPI control plane and Next.js dashboard — creating a project from just a description synthesizes its intent automatically
+3. **Infrastructure reconciliation** with explicit synced, drifted, skipped, and error states — with no keys configured, checks report *skipped/action-required*, never fake failures or fake successes
+4. **Credential management** with encrypted-at-rest API keys, saved and validated from the setup wizard
+5. **Autofix diagnosis** — turns a stack trace into root cause, severity, and concrete fix steps (deterministic heuristic core, no API key required; LLM-enriched when one is configured). Swarm and business-agent loops remain scaffolding.
 
 The product goal is larger: live scaffolding, deploys, monitoring, and self-healing PRs. Those paths are being hardened behind explicit auth, credentials, and quota gates before they are treated as production-ready.
 
@@ -74,13 +74,17 @@ YOU: "Build me a store"
      ▼  3AM: Bug detected
 ┌────────────────────────────────────────────────────────────┐
 │  🤖 AUTOFIX DAEMON                                          │
-│  → Reads stack trace                                        │
-│  → Diagnoses root cause                                     │
-│  → Target: generate patch, open PR, verify CI               │
+│  → Reads stack trace                          ✅ works      │
+│  → Diagnoses root cause + fix steps           ✅ works      │
+│  → Target: generate patch, open PR, verify CI 🏗️ planned    │
 └────────────────────────────────────────────────────────────┘
 ```
 
-> **Current status:** the control plane, dashboard, intent engine, and agent primitives exist. End-to-end autonomous repair is not production-ready yet.
+> **Current status:** the control plane, dashboard, intent engine, and error
+> diagnosis work today. Diagnosis (`error → root cause → fix steps`) runs with
+> no API key and is exposed at `/api/diagnose`, `/api/demo/diagnose`, and the
+> `autofix` agent. The closing stages — automated patch, PR, and CI verification
+> — are still in progress.
 
 ---
 
@@ -166,14 +170,25 @@ python3 run_api.py
 cd dashboard && npm install && npm run dev
 # → http://localhost:3000/dashboard/setup
 
-# 5. Create your first project
+# 5. Create your first project — a description is all you need
 curl -X POST http://localhost:8080/api/projects \
   -H "Content-Type: application/json" \
-  -d '{"name": "my-store", "stack": "nextjs", "intent_yaml": "project: my-store\nstack: nextjs\ndeploy:\n  provider: vercel"}'
+  -d '{"name": "my-store", "description": "Fashion store for Poland with BLIK payments"}'
+# → The .powerhouse.yml intent is synthesized from the description
+#   (stack, deploy provider, monitoring, CI). Pass intent_yaml to override.
 
 # 6. Trigger reconciliation
 curl -X POST http://localhost:8080/api/projects/<id>/reconcile
-# → Infrastructure checks are reported as synced, drifted, skipped, or error
+# → Infrastructure checks are reported as synced, drifted, skipped, or error.
+#   With zero keys everything reports skipped/action_required — honest, not failed.
+
+# 7. Diagnose an error (no auth, no API key needed)
+curl -X POST http://localhost:8080/api/demo/diagnose \
+  -H "Content-Type: application/json" \
+  -d '{"message": "TypeError: Cannot read properties of undefined (reading \"map\")"}'
+# → {"category": "null_reference", "severity": "high",
+#    "summary": "Read a property ('map') off undefined/null.",
+#    "suggested_fix": ["Use optional chaining (obj?.map) ...", ...], ...}
 ```
 
 `run_api.py` sets local-only development auth and dev secret encryption defaults. In production, configure Clerk, `POWERHOUSE_SECRET_KEY`, explicit `POWERHOUSE_CORS_ORIGINS`, and leave `POWERHOUSE_ALLOW_DEV_AUTH` disabled.

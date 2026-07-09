@@ -1,4 +1,21 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api";
+const HOSTED_API_URL = "https://instill-api.fly.dev/api";
+const LOCAL_API_URL = "http://localhost:8080/api";
+
+function defaultApiUrl(): string {
+  if (process.env.NEXT_PUBLIC_API_URL) return process.env.NEXT_PUBLIC_API_URL;
+  // No build-time override: pick by where the page is actually running so a
+  // local instance talks to the local API and the deployed dashboard keeps
+  // talking to the hosted API.
+  if (
+    typeof window !== "undefined" &&
+    !["localhost", "127.0.0.1"].includes(window.location.hostname)
+  ) {
+    return HOSTED_API_URL;
+  }
+  return LOCAL_API_URL;
+}
+
+export const API_URL = defaultApiUrl();
 
 export interface Project {
   id: string;
@@ -103,6 +120,28 @@ export interface SetupValidationResult {
   next_action: string;
 }
 
+export interface ParseResult {
+  project: string;
+  stack: string;
+  market: string;
+  features: string[];
+  tools: string[];
+  explanation: string;
+  required_keys: string[];
+  intent_yaml: string;
+}
+
+export interface DiagnoseResult {
+  category: string;
+  severity: string;
+  summary: string;
+  root_cause: string;
+  suggested_fix: string[];
+  likely_files: string[];
+  confidence: string;
+  source: string;
+}
+
 async function fetchAPI<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     headers: { "Content-Type": "application/json", ...options?.headers },
@@ -148,5 +187,11 @@ export const api = {
     status: () => fetchAPI<SetupStatus>("/setup/status"),
     validate: (provider: string) =>
       fetchAPI<SetupValidationResult>(`/setup/validate/${provider}`, { method: "POST" }),
+  },
+  demo: {
+    parse: (description: string) =>
+      fetchAPI<ParseResult>("/demo/parse", { method: "POST", body: JSON.stringify({ description }) }),
+    diagnose: (message: string) =>
+      fetchAPI<DiagnoseResult>("/demo/diagnose", { method: "POST", body: JSON.stringify({ message }) }),
   },
 };

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -60,6 +61,37 @@ class CIConfig:
     typecheck: bool = True
     test: bool = True
     secrets_scan: bool = True
+
+
+def _coerce_section(value: Any, scalar_key: str = "") -> Dict[str, Any]:
+    """Return a mapping for a config section, tolerating shorthand scalars.
+
+    ``deploy: vercel`` means ``deploy: {provider: vercel}`` and ``ci: none``
+    means ``ci: {runner: none}`` — dropping the scalar silently would invert
+    the declared intent, so interpret it via ``scalar_key`` instead.
+    """
+    if isinstance(value, dict):
+        return value
+    if scalar_key and isinstance(value, str) and value.strip():
+        return {scalar_key: value.strip()}
+    return {}
+
+
+def _coerce_flag_section(value: Any) -> Dict[str, Any]:
+    """Return a flag mapping, accepting shorthand strings and lists.
+
+    ``monitoring: sentry+phoenix`` and ``monitoring: [sentry, phoenix]``
+    both become ``{"sentry": True, "phoenix": True}`` — this is the shape the
+    README's own example uses.
+    """
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        names = [n.strip().lower() for n in re.split(r"[+,\s]+", value) if n.strip()]
+        return {name: True for name in names}
+    if isinstance(value, list):
+        return {str(n).strip().lower(): True for n in value if str(n).strip()}
+    return {}
 
 
 @dataclass
@@ -168,10 +200,10 @@ class IntentFile:
     def from_dict(
         cls, data: Dict[str, Any], source_path: Optional[Path] = None
     ) -> "IntentFile":
-        monitoring_data = data.get("monitoring", {}) or {}
-        memory_data = data.get("memory", {}) or {}
-        ci_data = data.get("ci", {}) or {}
-        deploy_data = data.get("deploy", {}) or {}
+        monitoring_data = _coerce_flag_section(data.get("monitoring"))
+        memory_data = _coerce_flag_section(data.get("memory"))
+        ci_data = _coerce_section(data.get("ci"), scalar_key="runner")
+        deploy_data = _coerce_section(data.get("deploy"), scalar_key="provider")
         deploy_provider_raw = deploy_data.get("provider", "none")
         try:
             deploy_provider = Provider(deploy_provider_raw)
@@ -180,26 +212,33 @@ class IntentFile:
 
         deploy = DeployConfig(
             provider=deploy_provider,
-            region=deploy_data.get("region", ""),
-            env=deploy_data.get("env", {}),
+            region=deploy_data.get("region", "") or "",
+            env=deploy_data.get("env") or {},
             domain=deploy_data.get("domain"),
         )
         monitoring = MonitoringConfig(
-            sentry=monitoring_data.get("sentry", False),
-            phoenix=monitoring_data.get("phoenix", False),
-            prometheus=monitoring_data.get("prometheus", False),
-            uptime_kuma=monitoring_data.get("uptime_kuma", False),
+            sentry=bool(monitoring_data.get("sentry", False)),
+            phoenix=bool(monitoring_data.get("phoenix", False)),
+            prometheus=bool(monitoring_data.get("prometheus", False)),
+            uptime_kuma=bool(monitoring_data.get("uptime_kuma", False)),
         )
         memory = MemoryConfig(
-            chromadb=memory_data.get("chromadb", False),
-            wiki=memory_data.get("wiki", False),
+            chromadb=bool(memory_data.get("chromadb", False)),
+            wiki=bool(memory_data.get("wiki", False)),
         )
+        runner_raw = str(ci_data.get("runner", "github_actions") or "none")
+        try:
+            runner = CIRunner(runner_raw)
+        except ValueError:
+            runner = (
+                CIRunner.GITHUB if "github" in runner_raw.lower() else CIRunner.NONE
+            )
         ci = CIConfig(
-            runner=CIRunner(ci_data.get("runner", "github_actions")),
-            lint=ci_data.get("lint", True),
-            typecheck=ci_data.get("typecheck", True),
-            test=ci_data.get("test", True),
-            secrets_scan=ci_data.get("secrets_scan", True),
+            runner=runner,
+            lint=bool(ci_data.get("lint", True)),
+            typecheck=bool(ci_data.get("typecheck", True)),
+            test=bool(ci_data.get("test", True)),
+            secrets_scan=bool(ci_data.get("secrets_scan", True)),
         )
         stack_raw = data.get("stack", "custom")
         try:

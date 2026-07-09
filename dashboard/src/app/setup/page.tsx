@@ -81,6 +81,7 @@ export default function SetupPage() {
   const [githubToken, setGithubToken] = useState("");
   const [vercelToken, setVercelToken] = useState("");
   const [openrouterKey, setOpenrouterKey] = useState("");
+  const [openrouterSaved, setOpenrouterSaved] = useState(false);
 
   // Validation results
   const [githubValid, setGithubValid] = useState<boolean | null>(null);
@@ -113,18 +114,31 @@ export default function SetupPage() {
     void fetchSetup();
   }, [fetchSetup]);
 
-  const validateProvider = async (provider: string) => {
+  const saveAndValidate = async (provider: string, token: string) => {
     setValidating(true);
     setError("");
     try {
+      // Store the typed token as an encrypted key, then validate that
+      // stored credential with a real provider API call.
+      if (token.trim()) {
+        await api.keys.create({
+          provider,
+          key_name: `${provider} (setup wizard)`,
+          key_value: token.trim(),
+        });
+      }
       const result = await api.setup.validate(provider);
-      const success = result.status === "connected" || result.status === "passed";
+      const success =
+        result.status === "valid" || result.status === "action_required";
       if (provider === "github") {
         setGithubValid(success);
         setGithubAccount((result.account as Record<string, string>)?.login || "");
       } else if (provider === "vercel") {
         setVercelValid(success);
         setVercelAccount((result.account as Record<string, string>)?.email || (result.account as Record<string, string>)?.username || "");
+      }
+      if (!success) {
+        setError(result.summary || "Validation failed");
       }
       await fetchSetup();
       return success;
@@ -136,20 +150,31 @@ export default function SetupPage() {
     }
   };
 
+  const saveOpenrouterKey = async () => {
+    setValidating(true);
+    setError("");
+    try {
+      await api.keys.create({
+        provider: "openrouter",
+        key_name: "openrouter (setup wizard)",
+        key_value: openrouterKey.trim(),
+      });
+      setOpenrouterSaved(true);
+      await fetchSetup();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Could not save the key");
+    } finally {
+      setValidating(false);
+    }
+  };
+
   const handleDeploy = async () => {
     setDeploying(true);
     setError("");
     try {
-      // Poll setup status until ready
-      for (let i = 0; i < 20; i++) {
-        await new Promise((r) => setTimeout(r, 3000));
-        const s = await api.setup.status();
-        setSetup(s);
-        if (s.ready && s.connected >= 4) break;
-      }
       await fetchSetup();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Deploy check failed");
+      setError(e instanceof Error ? e.message : "Status check failed");
     } finally {
       setDeploying(false);
     }
@@ -159,7 +184,7 @@ export default function SetupPage() {
     switch (step) {
       case 0: return githubValid === true;
       case 1: return vercelValid === true;
-      case 2: return openrouterKey.length > 0;
+      case 2: return openrouterSaved;
       case 3: return setup?.ready === true;
       default: return false;
     }
@@ -278,7 +303,7 @@ export default function SetupPage() {
                     className="flex-1 rounded-xl border border-white/[0.08] bg-zinc-900/50 px-4 py-2.5 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
                   />
                   <button
-                    onClick={() => validateProvider("github")}
+                    onClick={() => saveAndValidate("github", githubToken)}
                     disabled={validating || !githubToken}
                     className="inline-flex items-center gap-2 rounded-xl border border-indigo-500/30 bg-indigo-500/10 px-4 py-2.5 text-sm font-medium text-indigo-300 hover:bg-indigo-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all shrink-0"
                   >
@@ -376,7 +401,7 @@ export default function SetupPage() {
                     className="flex-1 rounded-xl border border-white/[0.08] bg-zinc-900/50 px-4 py-2.5 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
                   />
                   <button
-                    onClick={() => validateProvider("vercel")}
+                    onClick={() => saveAndValidate("vercel", vercelToken)}
                     disabled={validating || !vercelToken}
                     className="inline-flex items-center gap-2 rounded-xl border border-indigo-500/30 bg-indigo-500/10 px-4 py-2.5 text-sm font-medium text-indigo-300 hover:bg-indigo-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all shrink-0"
                   >
@@ -490,13 +515,30 @@ export default function SetupPage() {
                 <label className="block text-sm font-medium text-zinc-300 mb-2">
                   OpenRouter API Key
                 </label>
-                <input
-                  type="password"
-                  value={openrouterKey}
-                  onChange={(e) => setOpenrouterKey(e.target.value)}
-                  placeholder="sk-or-v1-..."
-                  className="w-full rounded-xl border border-white/[0.08] bg-zinc-900/50 px-4 py-2.5 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
-                />
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    value={openrouterKey}
+                    onChange={(e) => {
+                      setOpenrouterKey(e.target.value);
+                      setOpenrouterSaved(false);
+                    }}
+                    placeholder="sk-or-v1-..."
+                    className="flex-1 rounded-xl border border-white/[0.08] bg-zinc-900/50 px-4 py-2.5 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                  />
+                  <button
+                    onClick={saveOpenrouterKey}
+                    disabled={validating || !openrouterKey.trim()}
+                    className="inline-flex items-center gap-2 rounded-xl border border-indigo-500/30 bg-indigo-500/10 px-4 py-2.5 text-sm font-medium text-indigo-300 hover:bg-indigo-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all shrink-0"
+                  >
+                    {validating ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <ShieldCheck className="h-4 w-4" />
+                    )}
+                    Save
+                  </button>
+                </div>
                 <a
                   href="https://openrouter.ai/settings/keys"
                   target="_blank"
@@ -508,11 +550,12 @@ export default function SetupPage() {
                 </a>
               </div>
 
-              {openrouterKey.length > 0 && (
+              {openrouterSaved && (
                 <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 flex items-center gap-3">
                   <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0" />
                   <p className="text-sm text-emerald-300">
-                    API key saved. You can validate it after deployment.
+                    API key saved (encrypted at rest). It powers LLM parsing and
+                    diagnosis enrichment.
                   </p>
                 </div>
               )}
@@ -584,7 +627,21 @@ export default function SetupPage() {
               ))}
             </div>
 
-            {/* Deploy button */}
+            {/* Self-hosted deploy instructions + readiness check */}
+            <div className="rounded-xl border border-white/[0.06] bg-zinc-900/50 p-4 mb-4">
+              <div className="flex items-center gap-2 text-sm text-zinc-300 mb-2">
+                <Terminal className="h-4 w-4 text-indigo-400" />
+                <span className="font-medium">Deploy from your terminal</span>
+              </div>
+              <p className="text-xs text-zinc-500 leading-relaxed">
+                Your API runs on your own infrastructure. From the repo root,
+                run <code className="text-indigo-300 font-mono">./setup.sh</code>{" "}
+                to deploy to Fly.io + Vercel, or{" "}
+                <code className="text-indigo-300 font-mono">python3 run_api.py</code>{" "}
+                for a local instance. Then refresh the status below.
+              </p>
+            </div>
+
             <button
               onClick={handleDeploy}
               disabled={deploying}
@@ -593,29 +650,15 @@ export default function SetupPage() {
               {deploying ? (
                 <>
                   <Loader2 className="h-5 w-5 animate-spin" />
-                  Deploying your API...
+                  Checking provider status...
                 </>
               ) : (
                 <>
                   <Rocket className="h-5 w-5" />
-                  Deploy to Fly.io
+                  Refresh readiness status
                 </>
               )}
             </button>
-
-            {deploying && (
-              <div className="mt-4 rounded-xl border border-indigo-500/10 bg-indigo-500/[0.02] p-4">
-                <div className="flex items-center gap-2 text-sm text-indigo-300">
-                  <Terminal className="h-4 w-4" />
-                  <span>Provisioning infrastructure, setting secrets, deploying...</span>
-                </div>
-                <div className="mt-3 flex gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse" />
-                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse [animation-delay:0.2s]" />
-                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse [animation-delay:0.4s]" />
-                </div>
-              </div>
-            )}
 
             {setup?.ready && (
               <div className="mt-6 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-6 text-center">

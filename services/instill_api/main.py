@@ -33,6 +33,8 @@ from .schemas import (
     ApiKeyResponse,
     BuildRequest,
     BuildResponse,
+    DiagnoseRequest,
+    DiagnoseResponse,
     HealthResponse,
     ParseRequest,
     ParseResponse,
@@ -46,6 +48,8 @@ from .schemas import (
     SetupStatusResponse,
     SetupValidationResponse,
 )
+from .diagnosis import diagnose_error
+from .intent_synthesis import slugify_project, spec_to_intent_yaml
 from .secrets import SecretConfigError, decrypt_secret, encrypt_secret
 
 
@@ -377,7 +381,11 @@ app.add_middleware(
 
 # ── Clerk JWT Validation ──
 
-CLERK_JWKS_URL = "https://api.clerk.com/v1/jwks"
+# Clerk serves JWKS per-instance (e.g.
+# https://<slug>.clerk.accounts.dev/.well-known/jwks.json); the shared
+# api.clerk.com endpoint requires authentication and won't verify instance
+# tokens. Point CLERK_JWKS_URL at your instance's Frontend API JWKS.
+CLERK_JWKS_URL = os.getenv("CLERK_JWKS_URL", "https://api.clerk.com/v1/jwks")
 _jwks_client: Optional[jwt.PyJWKClient] = None
 
 
@@ -392,8 +400,10 @@ def _get_jwks_client() -> jwt.PyJWKClient:
 async def get_clerk_user_id(request: Request) -> Optional[str]:
     """Extract Clerk user ID from JWT in Authorization header.
 
-    Returns None if no auth header is present.
-    Raises HTTPException on invalid/expired tokens.
+    Returns None if no auth header is present, or in dev mode when Clerk
+    isn't configured at all (so a Clerk-less local instance doesn't 503).
+    Once CLERK_SECRET_KEY is set, invalid/expired tokens always raise 401 —
+    even in dev — so bad tokens can never fall through to another tenant.
     """
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
@@ -402,6 +412,8 @@ async def get_clerk_user_id(request: Request) -> Optional[str]:
     token = auth[7:]
     clerk_secret = os.getenv("CLERK_SECRET_KEY")
     if not clerk_secret:
+        if _dev_auth_allowed():
+            return None
         raise HTTPException(
             status_code=503,
             detail="CLERK_SECRET_KEY is required to validate bearer tokens",
@@ -418,7 +430,7 @@ async def get_clerk_user_id(request: Request) -> Optional[str]:
         )
         # Verify issuer
         iss = payload.get("iss", "")
-        if not iss.startswith("https://clerk."):
+        if not iss.startswith("https://clerk.") and ".clerk.accounts." not in iss:
             raise HTTPException(status_code=401, detail="Invalid token issuer")
         return payload.get("sub")  # Clerk user ID
     except jwt.ExpiredSignatureError:
@@ -457,8 +469,10 @@ async def get_current_tenant(
     if not _dev_auth_allowed():
         raise HTTPException(status_code=401, detail="Authentication required")
 
-    # Local development fallback only. Production must use Clerk.
-    tenant = session.query(Tenant).first()
+    # Local development fallback only. Production must use Clerk. Pin the
+    # fallback to a dedicated dev tenant — never `.first()`, which would
+    # serve whichever real tenant happens to sort first.
+    tenant = session.query(Tenant).filter(Tenant.clerk_id == "dev_user").first()
     if tenant is None:
         tenant = Tenant(
             id=gen_id(),
@@ -897,15 +911,7 @@ Rules:
             json_match = re.search(r"\{[\s\S]*\}", content)
             if json_match:
                 parsed = json.loads(json_match.group(0))
-                return ParseResponse(
-                    project=parsed.get("project", "my-project"),
-                    stack=parsed.get("stack", "nextjs"),
-                    market=parsed.get("market", "global"),
-                    features=parsed.get("features", []),
-                    tools=parsed.get("tools", []),
-                    explanation=parsed.get("explanation", ""),
-                    required_keys=parsed.get("required_keys", ["GitHub", "Vercel"]),
-                )
+                return _spec_response(parsed, data.description)
             else:
                 return _fallback_parse(data.description)
 
@@ -970,17 +976,44 @@ Return JSON with these exact keys:
                 .removeprefix("```")
                 .strip()
             )
-            return ParseResponse(
-                project=parsed.get("project", "my-project"),
-                stack=parsed.get("stack", "nextjs"),
-                market=parsed.get("market", "global"),
-                features=parsed.get("features", []),
-                tools=parsed.get("tools", []),
-                explanation=parsed.get("explanation", ""),
-                required_keys=parsed.get("required_keys", ["GitHub", "Vercel"]),
-            )
+            return _spec_response(parsed, data.description)
     except Exception:
         return _fallback_parse(data.description)
+
+
+def _as_str_list(value: Any) -> list[str]:
+    """Coerce an LLM-supplied list field: strings wrap, lists map, rest empty."""
+    if isinstance(value, str):
+        return [value] if value.strip() else []
+    if isinstance(value, list):
+        return [str(item) for item in value]
+    return []
+
+
+def _spec_response(parsed: dict[str, Any], description: str) -> ParseResponse:
+    """Build a ParseResponse (with synthesized intent_yaml) from an LLM spec."""
+    project = slugify_project(str(parsed.get("project") or "my-project"))
+    stack = str(parsed.get("stack") or "nextjs")
+    market = str(parsed.get("market") or "global")
+    features = _as_str_list(parsed.get("features"))
+    tools = _as_str_list(parsed.get("tools"))
+    return ParseResponse(
+        project=project,
+        stack=stack,
+        market=market,
+        features=features,
+        tools=tools,
+        explanation=str(parsed.get("explanation") or ""),
+        required_keys=_as_str_list(parsed.get("required_keys")) or ["GitHub", "Vercel"],
+        intent_yaml=spec_to_intent_yaml(
+            project=project,
+            stack=stack,
+            market=market,
+            features=features,
+            tools=tools,
+            description=description,
+        ),
+    )
 
 
 def _fallback_parse(description: str) -> ParseResponse:
@@ -1098,7 +1131,7 @@ def _fallback_parse(description: str) -> ParseResponse:
         "as",
     }
     meaningful = [w for w in words if w not in stop_words and len(w) > 2][:3]
-    project = "-".join(meaningful) if meaningful else "my-project"
+    project = slugify_project("-".join(meaningful))
 
     # Generate explanation
     stack_name = {
@@ -1126,7 +1159,116 @@ def _fallback_parse(description: str) -> ParseResponse:
         tools=tools,
         explanation=explanation,
         required_keys=required_keys,
+        intent_yaml=spec_to_intent_yaml(
+            project=project,
+            stack=stack,
+            market=market,
+            features=features,
+            tools=tools,
+            description=description,
+        ),
     )
+
+
+# ── Error Diagnosis / Autofix (heuristic, LLM-optional) ──
+
+
+async def _llm_diagnose_dict(req: DiagnoseRequest) -> Optional[dict]:
+    """Optional LLM-backed diagnosis. Returns a parsed dict, or None on any failure."""
+    openrouter_key = os.getenv("OPENROUTER_API_KEY", "")
+    if not openrouter_key:
+        return None
+
+    import json
+
+    error_text = "\n".join(
+        part
+        for part in (
+            f"Title: {req.title}" if req.title else "",
+            f"Message: {req.message}" if req.message else "",
+            f"Stack trace:\n{req.stack_trace}" if req.stack_trace else "",
+        )
+        if part
+    )
+    if not error_text.strip():
+        return None
+
+    prompt = (
+        "You are an expert software engineer triaging a production error. "
+        "Return ONLY valid JSON, no prose, with these exact keys: "
+        '{"category": string, "severity": "high"|"medium"|"low", '
+        '"summary": string, "root_cause": string, '
+        '"suggested_fix": [string], "likely_files": [string], '
+        '"confidence": "high"|"medium"|"low"}.\n\n'
+        f"{error_text}"
+    )
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {openrouter_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": "openai/gpt-4o-mini",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.1,
+                },
+            )
+            if resp.is_error:
+                return None
+            content = resp.json()["choices"][0]["message"]["content"]
+            data = json.loads(
+                content.strip()
+                .removesuffix("```")
+                .removeprefix("```json")
+                .removeprefix("```")
+                .strip()
+            )
+    except Exception:
+        return None
+
+    return data if isinstance(data, dict) and data.get("summary") else None
+
+
+async def _diagnose(req: DiagnoseRequest) -> DiagnoseResponse:
+    """Diagnose an error: deterministic heuristic baseline, LLM-enriched when keyed."""
+    base = diagnose_error(
+        title=req.title, message=req.message, stack_trace=req.stack_trace
+    )
+    llm = await _llm_diagnose_dict(req)
+    if llm:
+        base.category = str(llm.get("category") or base.category)
+        base.severity = str(llm.get("severity") or base.severity).lower()
+        base.summary = str(llm.get("summary") or base.summary)
+        base.root_cause = str(llm.get("root_cause") or base.root_cause)
+        if isinstance(llm.get("suggested_fix"), list) and llm["suggested_fix"]:
+            base.suggested_fix = [str(s) for s in llm["suggested_fix"]][:6]
+        if isinstance(llm.get("likely_files"), list) and llm["likely_files"]:
+            base.likely_files = [str(f) for f in llm["likely_files"]][:6]
+        base.confidence = str(llm.get("confidence") or base.confidence).lower()
+        base.source = "llm"
+    return DiagnoseResponse(**base.to_dict())
+
+
+@app.post("/api/demo/diagnose", response_model=DiagnoseResponse)
+async def demo_diagnose(data: DiagnoseRequest):
+    """Public autofix-style error diagnosis for the demo sandbox. No auth required.
+
+    Heuristic by default (works with zero keys); uses the instance's OpenRouter
+    key for a richer diagnosis when one is configured.
+    """
+    return await _diagnose(data)
+
+
+@app.post("/api/diagnose", response_model=DiagnoseResponse)
+async def diagnose_endpoint(
+    data: DiagnoseRequest,
+    tenant: Tenant = Depends(get_current_tenant),
+):
+    """Authenticated error diagnosis — the first stage of the autofix loop."""
+    return await _diagnose(data)
 
 
 # ── Project Builder ──
@@ -1975,6 +2117,11 @@ def _reconciliation_summary_text(summary: dict[str, Any]) -> str:
         return "Declared resources are in sync."
     if not by_status:
         return "No declared resources were checked."
+    if set(by_status.keys()) == {"skipped"}:
+        return (
+            f"{by_status['skipped']} resource check(s) skipped — "
+            "connect provider credentials in Setup to enable them."
+        )
     parts = [f"{count} {status}" for status, count in sorted(by_status.items())]
     return "Resource check completed: " + ", ".join(parts) + "."
 
@@ -1997,13 +2144,34 @@ async def create_project(
     session: Session = Depends(get_session),
     tenant: Tenant = Depends(get_current_tenant),
 ):
+    intent_yaml = data.intent_yaml
+    stack = data.stack
+    setup_summary = "Project registered in Powerhouse."
+    if not intent_yaml.strip():
+        # Declare-the-business path: synthesize the intent from the
+        # description (or the name) so reconciliation has resources to check.
+        parsed = _fallback_parse(data.description or data.name)
+        if not stack or stack == "custom":
+            stack = parsed.stack
+        intent_yaml = spec_to_intent_yaml(
+            project=data.name,
+            stack=stack,
+            market=parsed.market,
+            features=parsed.features,
+            tools=parsed.tools,
+            description=data.description,
+        )
+        setup_summary = (
+            "Project registered in Powerhouse. Intent synthesized from the "
+            "description — review it in the Intent tab, then reconcile."
+        )
     project = Project(
         id=gen_id(),
         tenant_id=tenant.id,
         name=data.name,
         description=data.description,
-        stack=data.stack,
-        intent_yaml=data.intent_yaml,
+        stack=stack,
+        intent_yaml=intent_yaml,
         status="pending",
     )
     session.add(project)
@@ -2014,7 +2182,7 @@ async def create_project(
         run_type="setup",
         status="succeeded",
         title="Project created",
-        summary="Project registered in Powerhouse.",
+        summary=setup_summary,
     )
     session.commit()
     session.refresh(project)
@@ -2238,11 +2406,13 @@ async def trigger_agent(
     session.commit()
 
     try:
-        output = _run_agent(data.agent_type, data.input_spec, project.intent_yaml)
-        run.status = "succeeded"
+        status, output = _run_agent(
+            data.agent_type, data.input_spec, project.intent_yaml
+        )
+        run.status = status
         run.output = output
         run.completed_at = datetime.now(timezone.utc)
-        project_run.status = "succeeded"
+        project_run.status = status
         project_run.summary = output
         project_run.log = output
         project_run.completed_at = run.completed_at
@@ -2301,14 +2471,30 @@ async def create_api_key(
     except SecretConfigError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
 
-    key = ApiKey(
-        id=gen_id(),
-        tenant_id=tenant.id,
-        provider=data.provider,
-        key_name=data.key_name,
-        encrypted_value=encrypted_value,
+    # Upsert on (tenant, provider, key_name): re-saving from the setup
+    # wizard (or retrying after a failed validation) replaces the stored
+    # credential instead of accumulating duplicate rows.
+    key = (
+        session.query(ApiKey)
+        .filter(
+            ApiKey.tenant_id == tenant.id,
+            ApiKey.provider == data.provider,
+            ApiKey.key_name == data.key_name,
+        )
+        .first()
     )
-    session.add(key)
+    if key is not None:
+        key.encrypted_value = encrypted_value
+        key.created_at = datetime.now(timezone.utc)
+    else:
+        key = ApiKey(
+            id=gen_id(),
+            tenant_id=tenant.id,
+            provider=data.provider,
+            key_name=data.key_name,
+            encrypted_value=encrypted_value,
+        )
+        session.add(key)
     session.commit()
     session.refresh(key)
     return ApiKeyResponse.model_validate(key)
@@ -2337,7 +2523,13 @@ async def delete_api_key(
 def _status_from_summary(summary: dict) -> str:
     if summary.get("errors"):
         return "error"
-    return "synced" if summary.get("healthy") else "drifted"
+    if summary.get("healthy"):
+        return "synced"
+    by_status = summary.get("by_status") or {}
+    if by_status and set(by_status.keys()) == {"skipped"}:
+        # All checks were skipped (missing credentials): needs setup, not broken.
+        return "action_required"
+    return "drifted"
 
 
 def _serialize_run_log(results: list[dict], summary: dict) -> str:
@@ -2395,9 +2587,24 @@ def _run_reconciliation(intent_yaml: str, dry_run: bool = False):
     return results_dict, summary
 
 
-def _run_agent(agent_type: str, input_spec: str, intent_yaml: str = "") -> str:
-    """Return an explicit unsupported-agent message until the runtime is wired."""
-    return (
+def _run_agent(
+    agent_type: str, input_spec: str, intent_yaml: str = ""
+) -> tuple[str, str]:
+    """Run a synchronous, deterministic agent task. Returns (status, output).
+
+    The ``autofix`` agent performs heuristic error diagnosis on the supplied
+    error text (``input_spec``). Other agent types are not wired to a runtime
+    yet — they are recorded honestly as ``skipped``, never as ``succeeded``.
+    """
+    if agent_type == "autofix":
+        stripped = input_spec.strip()
+        first_line = stripped.splitlines()[0] if stripped else ""
+        diagnosis = diagnose_error(
+            title=first_line, message=input_spec, stack_trace=input_spec
+        )
+        return "succeeded", diagnosis.format_text()
+
+    return "skipped", (
         f"{agent_type} agent runtime is not wired to this API yet. "
         "Use reconciliation for infrastructure checks; agent execution needs the "
         "orchestrator worker integration before it can make changes."

@@ -4,21 +4,41 @@ Autofix Daemon — Polls Sentry for new errors, diagnoses with LLM, opens GitHub
 
 import json
 import os
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
 
+# Make the shared heuristic diagnosis engine importable when run as a script
+# (services/autofix-daemon/ is not an installed package).
+_REPO_ROOT = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+)
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+
 # Configuration
 SENTRY_AUTH_TOKEN = os.getenv("SENTRY_AUTH_TOKEN", "")
 SENTRY_ORG = os.getenv("SENTRY_ORG", "")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
+GITHUB_BASE_BRANCH = os.getenv("GITHUB_BASE_BRANCH", "main")
+# Repo ("owner/repo") to open autofix PRs against when an alert doesn't
+# carry one. Without a repo the daemon diagnoses but never opens a PR.
+AUTOFIX_DEFAULT_REPO = os.getenv("AUTOFIX_DEFAULT_REPO", "")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 POLL_INTERVAL = int(os.getenv("AUTOFIX_POLL_INTERVAL", "60"))
-ALERTS_DIR = Path("/data/powerhouse/observability-bridge/alerts")
-ALERTS_DIR.mkdir(parents=True, exist_ok=True)
+ALERTS_DIR = Path(
+    os.getenv("AUTOFIX_ALERTS_DIR", "/data/powerhouse/observability-bridge/alerts")
+)
+try:
+    ALERTS_DIR.mkdir(parents=True, exist_ok=True)
+except OSError:
+    # Don't crash on import when the data dir isn't writable (e.g. tests/CI).
+    pass
 
+GITHUB_API = "https://api.github.com"
 LLM_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 LLM_MODEL = "anthropic/claude-sonnet-4"
 
@@ -49,17 +69,52 @@ def fetch_sentry_issues() -> list[dict]:
     return resp.json()
 
 
+def _heuristic_diagnosis(error_title: str, error_message: str) -> dict:
+    """Offline fallback diagnosis using the shared heuristic engine.
+
+    Produces a real root-cause read (no API key needed) so Sentry-sourced
+    alerts get triaged instead of silently skipped. It does not propose code
+    changes, so it never opens a PR on its own.
+    """
+    try:
+        from services.instill_api.diagnosis import diagnose_error
+    except Exception:
+        return {
+            "diagnosis": "Skipped: no LLM API key and heuristic engine unavailable",
+            "files": [],
+            "changes": [],
+        }
+
+    d = diagnose_error(
+        title=error_title, message=error_message, stack_trace=error_message
+    )
+    text = f"{d.summary} {d.root_cause}"
+    if d.suggested_fix:
+        text += " Fix: " + "; ".join(d.suggested_fix)
+    return {
+        "diagnosis": text,
+        "category": d.category,
+        "severity": d.severity,
+        "files": d.likely_files,
+        "changes": [],
+        "source": "heuristic",
+    }
+
+
 def diagnose(error_title: str, error_message: str) -> dict:
-    """Use LLM to diagnose the error and propose a fix."""
+    """Diagnose an error: LLM when a key is configured, heuristic otherwise."""
     if not OPENROUTER_API_KEY:
-        return {"diagnosis": "Skipped: no LLM API key configured", "patch": None}
+        return _heuristic_diagnosis(error_title, error_message)
 
     system_prompt = (
         "You are an expert software engineer. Analyze the error and produce:\n"
         "1. Root cause diagnosis (2-3 sentences)\n"
-        "2. Proposed fix (code patch or specific change)\n"
-        "3. File(s) likely affected\n\n"
-        'Respond in JSON: {"diagnosis": "...", "patch": "...", "files": ["..."]}'
+        "2. File(s) likely affected\n"
+        "3. The exact fix as full replacement file contents\n\n"
+        "Respond in JSON with these keys: "
+        '{"diagnosis": "...", "files": ["path/one.py"], '
+        '"changes": [{"path": "path/one.py", "content": "<entire new file contents>"}]}. '
+        'Only include "changes" entries you are confident about; use an empty list if unsure.'
     )
 
     user_prompt = f"Error title: {error_title}\n\nError message:\n{error_message}"
@@ -82,61 +137,172 @@ def diagnose(error_title: str, error_message: str) -> dict:
     )
 
     if resp.status_code != 200:
-        return {"diagnosis": f"LLM error: {resp.status_code}", "patch": None}
+        print(f"LLM error {resp.status_code}; falling back to heuristic diagnosis")
+        return _heuristic_diagnosis(error_title, error_message)
 
     try:
         content = resp.json()["choices"][0]["message"]["content"]
-        return json.loads(content)
+        parsed = json.loads(content)
+        parsed.setdefault("source", "llm")
+        return parsed
     except Exception as e:
-        return {"diagnosis": f"Parse error: {e}", "patch": None}
+        print(f"LLM parse error ({e}); falling back to heuristic diagnosis")
+        return _heuristic_diagnosis(error_title, error_message)
 
 
-def open_github_pr(
-    repo: str, branch: str, title: str, body: str, patch: str
-) -> str | None:
-    """Open a PR with the proposed fix."""
-    if not GITHUB_TOKEN:
-        return None
-
-    headers = {
+def _gh_headers() -> dict:
+    return {
         "Authorization": f"Bearer {GITHUB_TOKEN}",
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
     }
 
-    # Create branch
+
+def commit_file_changes(
+    repo: str,
+    branch: str,
+    parent_sha: str,
+    changes: list[dict],
+    message: str,
+) -> str | None:
+    """Commit full-file replacements onto a branch via the Git Data API.
+
+    Builds a real commit (blob → tree → commit → ref) so the resulting PR
+    actually contains the proposed fix instead of an empty diff. Returns the
+    new commit SHA, or None if any step fails.
+    """
+    if not changes:
+        return None
+
+    headers = _gh_headers()
+
+    # The new tree is layered on top of the parent commit's tree.
+    parent_commit = requests.get(
+        f"{GITHUB_API}/repos/{repo}/git/commits/{parent_sha}",
+        headers=headers,
+        timeout=30,
+    )
+    if parent_commit.status_code != 200:
+        print(f"Could not read base commit: {parent_commit.status_code}")
+        return None
+    base_tree_sha = parent_commit.json()["tree"]["sha"]
+
+    tree_entries: list[dict] = []
+    for change in changes:
+        path = change.get("path")
+        content = change.get("content")
+        if not path or content is None:
+            continue
+        blob_resp = requests.post(
+            f"{GITHUB_API}/repos/{repo}/git/blobs",
+            headers=headers,
+            json={"content": content, "encoding": "utf-8"},
+            timeout=30,
+        )
+        if blob_resp.status_code not in (200, 201):
+            print(f"Blob creation failed for {path}: {blob_resp.status_code}")
+            return None
+        tree_entries.append(
+            {
+                "path": path,
+                "mode": "100644",
+                "type": "blob",
+                "sha": blob_resp.json()["sha"],
+            }
+        )
+
+    if not tree_entries:
+        return None
+
+    tree_resp = requests.post(
+        f"{GITHUB_API}/repos/{repo}/git/trees",
+        headers=headers,
+        json={"base_tree": base_tree_sha, "tree": tree_entries},
+        timeout=30,
+    )
+    if tree_resp.status_code not in (200, 201):
+        print(f"Tree creation failed: {tree_resp.status_code}")
+        return None
+
+    commit_resp = requests.post(
+        f"{GITHUB_API}/repos/{repo}/git/commits",
+        headers=headers,
+        json={
+            "message": message,
+            "tree": tree_resp.json()["sha"],
+            "parents": [parent_sha],
+        },
+        timeout=30,
+    )
+    if commit_resp.status_code not in (200, 201):
+        print(f"Commit creation failed: {commit_resp.status_code}")
+        return None
+    new_commit_sha = commit_resp.json()["sha"]
+
+    ref_resp = requests.patch(
+        f"{GITHUB_API}/repos/{repo}/git/refs/heads/{branch}",
+        headers=headers,
+        json={"sha": new_commit_sha, "force": False},
+        timeout=30,
+    )
+    if ref_resp.status_code not in (200, 201):
+        print(f"Ref update failed: {ref_resp.status_code}")
+        return None
+
+    return new_commit_sha
+
+
+def open_github_pr(
+    repo: str,
+    branch: str,
+    title: str,
+    body: str,
+    changes: list[dict],
+    base: str = GITHUB_BASE_BRANCH,
+) -> str | None:
+    """Create a branch, commit the proposed changes, and open a PR.
+
+    Returns the PR URL, or None if there's nothing to commit or a step fails.
+    """
+    if not GITHUB_TOKEN or not changes:
+        return None
+
+    headers = _gh_headers()
+
     base_resp = requests.get(
-        f"https://api.github.com/repos/{repo}/git/refs/heads/main",
+        f"{GITHUB_API}/repos/{repo}/git/refs/heads/{base}",
         headers=headers,
         timeout=30,
     )
     if base_resp.status_code != 200:
         return None
+    base_sha = base_resp.json()["object"]["sha"]
 
-    sha = base_resp.json()["object"]["sha"]
     branch_resp = requests.post(
-        f"https://api.github.com/repos/{repo}/git/refs",
+        f"{GITHUB_API}/repos/{repo}/git/refs",
         headers=headers,
-        json={"ref": f"refs/heads/{branch}", "sha": sha},
+        json={"ref": f"refs/heads/{branch}", "sha": base_sha},
         timeout=30,
     )
     if branch_resp.status_code not in (200, 201):
         print(f"Branch creation failed: {branch_resp.status_code} {branch_resp.text}")
         return None
 
-    # Commit patch (simplified — real impl would use Git tree API)
-    # ...
+    commit_sha = commit_file_changes(
+        repo, branch, base_sha, changes, f"autofix: {title}"
+    )
+    if not commit_sha:
+        return None
 
-    # Create PR
     pr_resp = requests.post(
-        f"https://api.github.com/repos/{repo}/pulls",
+        f"{GITHUB_API}/repos/{repo}/pulls",
         headers=headers,
-        json={"title": title, "body": body, "head": branch, "base": "main"},
+        json={"title": title, "body": body, "head": branch, "base": base},
         timeout=30,
     )
-
     if pr_resp.status_code == 201:
         return pr_resp.json().get("html_url")
+    print(f"PR creation failed: {pr_resp.status_code} {pr_resp.text}")
     return None
 
 
@@ -154,11 +320,24 @@ def process_alert(alert: dict):
 
     diagnosis = diagnose(alert.get("title", ""), alert.get("message", ""))
     alert["diagnosis"] = diagnosis.get("diagnosis", "")
-    alert["patch"] = diagnosis.get("patch")
+    alert["files"] = diagnosis.get("files", [])
 
-    # TODO: Open PR if patch is valid
-    # pr_url = open_github_pr(...)
-    # alert["pr_url"] = pr_url
+    # Open a PR with the proposed change when we have a target repo and a
+    # confident, structured fix. Without both we record the diagnosis only.
+    changes = diagnosis.get("changes") or []
+    repo = alert.get("repo") or AUTOFIX_DEFAULT_REPO
+    if repo and changes and GITHUB_TOKEN:
+        branch = f"autofix/{alert_id}"
+        title = alert.get("title", "Autofix") or "Autofix"
+        body = (
+            f"## Autofix proposal\n\n{alert.get('diagnosis', '')}\n\n"
+            f"Files: {', '.join(diagnosis.get('files', []))}\n\n"
+            "_Opened automatically by the Powerhouse autofix daemon. Review before merging._"
+        )
+        pr_url = open_github_pr(repo, branch, title, body, changes)
+        if pr_url:
+            alert["pr_url"] = pr_url
+            alert["status"] = "pr_opened"
 
     diag_lower = diagnosis.get("diagnosis", "").lower()
     if diag_lower.startswith("resolved") or " status: resolved" in diag_lower:
@@ -189,6 +368,7 @@ def main():
                     "project": issue.get("project", {}).get("slug")
                     if isinstance(issue.get("project"), dict)
                     else None,
+                    "repo": AUTOFIX_DEFAULT_REPO,
                     "severity": "high" if issue.get("isUnhandled") else "medium",
                     "title": issue.get("title"),
                     "message": issue.get("culprit", ""),
