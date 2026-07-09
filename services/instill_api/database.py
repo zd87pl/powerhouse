@@ -1,13 +1,17 @@
 """Database session management."""
 
 import os
+from pathlib import Path
 from typing import Generator
 
 from sqlalchemy.orm import Session
 
 from .models import get_engine, init_db
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///instill.db")
+# Anchor the default SQLite file to the repo root so it doesn't depend on the
+# process working directory (which would silently create a second database).
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{_REPO_ROOT / 'instill.db'}")
 _engine = None
 
 

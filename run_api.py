@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import uvicorn
 
 
 def main() -> None:
-    os.environ.setdefault("DATABASE_URL", "sqlite:///instill.db")
+    default_db = Path(__file__).resolve().parent / "instill.db"
+    os.environ.setdefault("DATABASE_URL", f"sqlite:///{default_db}")
     os.environ.setdefault("POWERHOUSE_ENV", "development")
     os.environ.setdefault("POWERHOUSE_ALLOW_DEV_AUTH", "1")
     os.environ.setdefault("POWERHOUSE_ALLOW_INSECURE_DEV_SECRETS", "1")
