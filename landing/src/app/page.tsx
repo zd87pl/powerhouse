@@ -10,7 +10,8 @@ import {
   Sparkles,
 } from "lucide-react";
 
-const DASHBOARD_URL = "https://dashboard-chi-ivory-99.vercel.app";
+const DASHBOARD_URL =
+  process.env.NEXT_PUBLIC_DASHBOARD_URL || "https://dashboard-chi-ivory-99.vercel.app";
 
 const SETUP_STEPS = [
   { icon: KeyRound, label: "Connect GitHub", detail: "One-click OAuth" },

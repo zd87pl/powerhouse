@@ -1,4 +1,5 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api";
+export const API_URL =
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api";
 
 export interface Project {
   id: string;
@@ -103,6 +104,28 @@ export interface SetupValidationResult {
   next_action: string;
 }
 
+export interface ParseResult {
+  project: string;
+  stack: string;
+  market: string;
+  features: string[];
+  tools: string[];
+  explanation: string;
+  required_keys: string[];
+  intent_yaml: string;
+}
+
+export interface DiagnoseResult {
+  category: string;
+  severity: string;
+  summary: string;
+  root_cause: string;
+  suggested_fix: string[];
+  likely_files: string[];
+  confidence: string;
+  source: string;
+}
+
 async function fetchAPI<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     headers: { "Content-Type": "application/json", ...options?.headers },
@@ -148,5 +171,11 @@ export const api = {
     status: () => fetchAPI<SetupStatus>("/setup/status"),
     validate: (provider: string) =>
       fetchAPI<SetupValidationResult>(`/setup/validate/${provider}`, { method: "POST" }),
+  },
+  demo: {
+    parse: (description: string) =>
+      fetchAPI<ParseResult>("/demo/parse", { method: "POST", body: JSON.stringify({ description }) }),
+    diagnose: (message: string) =>
+      fetchAPI<DiagnoseResult>("/demo/diagnose", { method: "POST", body: JSON.stringify({ message }) }),
   },
 };

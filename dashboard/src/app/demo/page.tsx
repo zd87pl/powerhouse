@@ -6,6 +6,7 @@ import {
   ArrowRight,
   Loader2,
   Play,
+  Rocket,
   Sparkles,
   Tag,
   Wrench,
@@ -14,8 +15,8 @@ import {
   AlertTriangle,
   FileCode,
 } from "lucide-react";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://instill-api.fly.dev/api";
+import { api, type DiagnoseResult, type ParseResult, type Project } from "@/lib/api";
+import { errorMessage } from "@/lib/utils";
 
 const SEVERITY_STYLES: Record<string, string> = {
   high: "border-red-500/20 bg-red-500/5 text-red-300",
@@ -23,32 +24,15 @@ const SEVERITY_STYLES: Record<string, string> = {
   low: "border-zinc-500/20 bg-zinc-500/5 text-zinc-300",
 };
 
-interface ParseResult {
-  project: string;
-  stack: string;
-  market: string;
-  features: string[];
-  tools: string[];
-  explanation: string;
-  required_keys: string[];
-}
-
-interface DiagnoseResult {
-  category: string;
-  severity: string;
-  summary: string;
-  root_cause: string;
-  suggested_fix: string[];
-  likely_files: string[];
-  confidence: string;
-  source: string;
-}
-
 export default function DemoPage() {
   const [description, setDescription] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ParseResult | null>(null);
   const [error, setError] = useState("");
+
+  const [creating, setCreating] = useState(false);
+  const [created, setCreated] = useState<Project | null>(null);
+  const [createError, setCreateError] = useState("");
 
   const [errorText, setErrorText] = useState("");
   const [diagLoading, setDiagLoading] = useState(false);
@@ -60,22 +44,39 @@ export default function DemoPage() {
     setLoading(true);
     setError("");
     setResult(null);
+    setCreated(null);
+    setCreateError("");
     try {
-      const res = await fetch(`${API_URL}/demo/parse`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ description: description.trim() }),
-      });
-      if (!res.ok) {
-        const err = await res.text();
-        throw new Error(err || `API error: ${res.status}`);
-      }
-      const data: ParseResult = await res.json();
+      const data = await api.demo.parse(description.trim());
       setResult(data);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Something went wrong");
+      setError(errorMessage(e));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCreateProject = async () => {
+    if (!result) return;
+    setCreating(true);
+    setCreateError("");
+    try {
+      const project = await api.projects.create({
+        name: result.project,
+        description: description.trim(),
+        stack: result.stack,
+        intent_yaml: result.intent_yaml,
+      });
+      setCreated(project);
+    } catch (e: unknown) {
+      const msg = errorMessage(e);
+      setCreateError(
+        msg.includes("401") || msg.toLowerCase().includes("authentication")
+          ? "Creating projects needs your own Instill instance — run the API locally or finish Setup first."
+          : msg,
+      );
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -85,19 +86,10 @@ export default function DemoPage() {
     setDiagError("");
     setDiagResult(null);
     try {
-      const res = await fetch(`${API_URL}/demo/diagnose`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: errorText.trim() }),
-      });
-      if (!res.ok) {
-        const err = await res.text();
-        throw new Error(err || `API error: ${res.status}`);
-      }
-      const data: DiagnoseResult = await res.json();
+      const data = await api.demo.diagnose(errorText.trim());
       setDiagResult(data);
     } catch (e: unknown) {
-      setDiagError(e instanceof Error ? e.message : "Something went wrong");
+      setDiagError(errorMessage(e));
     } finally {
       setDiagLoading(false);
     }
@@ -243,6 +235,57 @@ export default function DemoPage() {
               <p className="text-sm text-zinc-400 leading-relaxed mt-4 p-4 rounded-xl bg-white/[0.02] border border-white/[0.03]">
                 {result.explanation}
               </p>
+
+              {result.intent_yaml && (
+                <details className="mt-4">
+                  <summary className="text-xs text-zinc-600 hover:text-zinc-400 cursor-pointer">
+                    View generated .powerhouse.yml
+                  </summary>
+                  <pre className="mt-2 p-4 rounded-xl bg-zinc-900/60 border border-white/[0.04] font-mono text-xs text-zinc-400 overflow-x-auto whitespace-pre">
+                    {result.intent_yaml}
+                  </pre>
+                </details>
+              )}
+
+              {/* Create the project from this spec */}
+              <div className="mt-5 pt-5 border-t border-white/[0.04]">
+                {created ? (
+                  <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+                    <p className="text-sm font-medium text-emerald-300">
+                      Project “{created.name}” created.
+                    </p>
+                    <Link
+                      href={`/dashboard/projects/${created.id}`}
+                      className="mt-2 inline-flex items-center gap-2 text-sm text-emerald-400 hover:text-emerald-300"
+                    >
+                      Open it in the dashboard and run the first reconcile
+                      <ArrowRight className="h-4 w-4" />
+                    </Link>
+                  </div>
+                ) : (
+                  <>
+                    <button
+                      onClick={handleCreateProject}
+                      disabled={creating}
+                      className="inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-6 py-3 text-sm font-semibold text-white hover:bg-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                    >
+                      {creating ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Rocket className="h-4 w-4" />
+                      )}
+                      Create this project
+                    </button>
+                    <p className="mt-2 text-xs text-zinc-600">
+                      Registers the project with this intent so you can reconcile
+                      infrastructure from the dashboard.
+                    </p>
+                    {createError && (
+                      <p className="mt-2 text-sm text-amber-400">{createError}</p>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
 
             {/* CTA */}
