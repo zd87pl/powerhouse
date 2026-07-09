@@ -11,8 +11,18 @@ from fastapi import FastAPI, Request
 
 app = FastAPI(title="Powerhouse Observability Bridge")
 
-ALERTS_DIR = Path("/data/powerhouse/observability-bridge/alerts")
-ALERTS_DIR.mkdir(parents=True, exist_ok=True)
+ALERTS_DIR = Path(
+    os.getenv("AUTOFIX_ALERTS_DIR", "/data/powerhouse/observability-bridge/alerts")
+)
+try:
+    ALERTS_DIR.mkdir(parents=True, exist_ok=True)
+except OSError:
+    # Don't crash on import when the data dir isn't writable (e.g. tests/CI).
+    pass
+
+# Repo the autofix daemon should open PRs against when the alert payload
+# doesn't name one ("owner/repo"). Without a repo the daemon diagnoses only.
+DEFAULT_REPO = os.getenv("AUTOFIX_DEFAULT_REPO", "")
 
 
 def save_alert(alert: dict) -> Path:
@@ -31,6 +41,7 @@ async def sentry_webhook(request: Request):
         "id": alert_id,
         "source": "sentry",
         "project": payload.get("project", "unknown"),
+        "repo": payload.get("repo") or DEFAULT_REPO,
         "severity": payload.get("level", "error") or "error",
         "title": payload.get("title", "Unknown error"),
         "message": payload.get("message", ""),
@@ -56,6 +67,7 @@ async def custom_alert(request: Request):
         "id": alert_id,
         "source": "custom",
         "project": payload.get("project", "unknown"),
+        "repo": payload.get("repo") or DEFAULT_REPO,
         "severity": payload.get("severity", "medium") or "medium",
         "title": payload.get("title", "Custom alert"),
         "message": payload.get("message", ""),

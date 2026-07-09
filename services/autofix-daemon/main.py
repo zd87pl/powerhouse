@@ -24,6 +24,9 @@ SENTRY_AUTH_TOKEN = os.getenv("SENTRY_AUTH_TOKEN", "")
 SENTRY_ORG = os.getenv("SENTRY_ORG", "")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 GITHUB_BASE_BRANCH = os.getenv("GITHUB_BASE_BRANCH", "main")
+# Repo ("owner/repo") to open autofix PRs against when an alert doesn't
+# carry one. Without a repo the daemon diagnoses but never opens a PR.
+AUTOFIX_DEFAULT_REPO = os.getenv("AUTOFIX_DEFAULT_REPO", "")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 POLL_INTERVAL = int(os.getenv("AUTOFIX_POLL_INTERVAL", "60"))
 ALERTS_DIR = Path(
@@ -322,7 +325,7 @@ def process_alert(alert: dict):
     # Open a PR with the proposed change when we have a target repo and a
     # confident, structured fix. Without both we record the diagnosis only.
     changes = diagnosis.get("changes") or []
-    repo = alert.get("repo", "")
+    repo = alert.get("repo") or AUTOFIX_DEFAULT_REPO
     if repo and changes and GITHUB_TOKEN:
         branch = f"autofix/{alert_id}"
         title = alert.get("title", "Autofix") or "Autofix"
@@ -365,6 +368,7 @@ def main():
                     "project": issue.get("project", {}).get("slug")
                     if isinstance(issue.get("project"), dict)
                     else None,
+                    "repo": AUTOFIX_DEFAULT_REPO,
                     "severity": "high" if issue.get("isUnhandled") else "medium",
                     "title": issue.get("title"),
                     "message": issue.get("culprit", ""),

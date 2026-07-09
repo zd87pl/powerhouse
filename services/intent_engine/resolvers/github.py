@@ -60,6 +60,25 @@ class GitHubResolver(Resolver):
                 drifts_found=drifts,
             )
 
+        # Idempotency: if the repo already exists, report remaining drift
+        # instead of re-POSTing a create that would 422 on every rerun.
+        actual = self.get_actual_state(intent)
+        if actual.get("exists"):
+            remaining = [d for d in drifts if d.field != "exists"]
+            return ReconciliationResult(
+                resource_key=self.resource_key,
+                status=ResourceStatus.DRIFTED if remaining else ResourceStatus.EXISTS,
+                action_taken=(
+                    f"GitHub repo {self.owner}/{intent.project} exists; "
+                    + (
+                        f"{len(remaining)} field(s) drifted (not auto-applied)"
+                        if remaining
+                        else "no changes needed"
+                    )
+                ),
+                drifts_found=remaining,
+            )
+
         create_url = (
             f"{self.api_url}/orgs/{self.owner}/repos"
             if os.getenv("GITHUB_OWNER_IS_ORG", "").lower() in {"1", "true", "yes"}
@@ -86,13 +105,14 @@ class GitHubResolver(Resolver):
                 drifts_found=drifts,
                 drifts_resolved=len(drifts),
             )
-        if resp.status_code == 422 and "already_exists" in resp.text:
+        # GitHub's duplicate-name 422 body says "name already exists on this
+        # account" — the previous check for "already_exists" never matched.
+        if resp.status_code == 422 and "already exists" in resp.text:
             return ReconciliationResult(
                 resource_key=self.resource_key,
                 status=ResourceStatus.EXISTS,
                 action_taken=f"GitHub repo {self.owner}/{intent.project} already exists",
                 drifts_found=drifts,
-                drifts_resolved=len(drifts),
             )
         return ReconciliationResult(
             resource_key=self.resource_key,

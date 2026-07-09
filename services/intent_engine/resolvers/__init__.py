@@ -48,9 +48,11 @@ class Resolver(ABC):
     def apply(self, intent: Any, drifts: List[Drift]) -> ReconciliationResult: ...
 
     def diff(self, declared: Dict[str, Any], actual: Dict[str, Any]) -> List[Drift]:
+        # Compare only declared keys: informational fields in the actual
+        # state (reason, note, html_url, ...) are not drift, and including
+        # them made "no drift detected" unreachable for keyed resolvers.
         drifts: List[Drift] = []
-        all_keys = set(declared.keys()) | set(actual.keys())
-        for key in sorted(all_keys):
+        for key in sorted(declared.keys()):
             d = declared.get(key)
             a = actual.get(key)
             if d != a:

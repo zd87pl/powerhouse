@@ -381,7 +381,11 @@ app.add_middleware(
 
 # ── Clerk JWT Validation ──
 
-CLERK_JWKS_URL = "https://api.clerk.com/v1/jwks"
+# Clerk serves JWKS per-instance (e.g.
+# https://<slug>.clerk.accounts.dev/.well-known/jwks.json); the shared
+# api.clerk.com endpoint requires authentication and won't verify instance
+# tokens. Point CLERK_JWKS_URL at your instance's Frontend API JWKS.
+CLERK_JWKS_URL = os.getenv("CLERK_JWKS_URL", "https://api.clerk.com/v1/jwks")
 _jwks_client: Optional[jwt.PyJWKClient] = None
 
 
@@ -396,8 +400,9 @@ def _get_jwks_client() -> jwt.PyJWKClient:
 async def get_clerk_user_id(request: Request) -> Optional[str]:
     """Extract Clerk user ID from JWT in Authorization header.
 
-    Returns None if no auth header is present.
-    Raises HTTPException on invalid/expired tokens.
+    Returns None if no auth header is present. Raises HTTPException on
+    invalid/expired tokens — except in dev mode, where validation failures
+    fall through to the local dev tenant instead of locking the user out.
     """
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
@@ -406,6 +411,8 @@ async def get_clerk_user_id(request: Request) -> Optional[str]:
     token = auth[7:]
     clerk_secret = os.getenv("CLERK_SECRET_KEY")
     if not clerk_secret:
+        if _dev_auth_allowed():
+            return None
         raise HTTPException(
             status_code=503,
             detail="CLERK_SECRET_KEY is required to validate bearer tokens",
@@ -422,12 +429,16 @@ async def get_clerk_user_id(request: Request) -> Optional[str]:
         )
         # Verify issuer
         iss = payload.get("iss", "")
-        if not iss.startswith("https://clerk."):
+        if not iss.startswith("https://clerk.") and ".clerk.accounts." not in iss:
             raise HTTPException(status_code=401, detail="Invalid token issuer")
         return payload.get("sub")  # Clerk user ID
     except jwt.ExpiredSignatureError:
+        if _dev_auth_allowed():
+            return None
         raise HTTPException(status_code=401, detail="Token expired")
     except jwt.InvalidTokenError as e:
+        if _dev_auth_allowed():
+            return None
         raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
 
 

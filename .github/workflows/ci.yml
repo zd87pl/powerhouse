@@ -34,9 +34,11 @@ jobs:
           shellcheck infra/scripts/*.sh || true
       - name: Check for secrets
         run: |
-          ! grep -r "sk-" services/ infra/ || true
-          ! grep -r "ghp_" services/ infra/ || true
-          ! grep -r "AKIA" services/ infra/ || true
+          # Fail the build if anything shaped like a real credential is committed.
+          if grep -rEn "sk-[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{20,}|AKIA[A-Z0-9]{16}" services/ infra/ dashboard/src/ landing/src/; then
+            echo "Potential secret found — remove it and rotate the credential."
+            exit 1
+          fi
       - name: Check no .env committed
         run: |
           test ! -f .env
