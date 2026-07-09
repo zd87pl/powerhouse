@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Play, Loader2 } from "lucide-react";
 import { api, type ReconciliationRun } from "@/lib/api";
-import { errorMessage } from "@/lib/utils";
+import { errorMessage, statusColor } from "@/lib/utils";
 
 export function IntentEditor({
   projectId,
@@ -76,11 +76,7 @@ export function IntentEditor({
       {result && (
         <div className="p-4 bg-slate-900 border border-slate-800 rounded-lg">
           <div className="flex items-center gap-2 mb-3">
-            <span className={`text-xs px-2 py-0.5 rounded-full border ${
-              result.status === "synced" ? "bg-green-500/20 text-green-400 border-green-500/30" :
-              result.status === "drifted" ? "bg-yellow-500/20 text-yellow-400 border-yellow-500/30" :
-              "bg-red-500/20 text-red-400 border-red-500/30"
-            }`}>
+            <span className={`text-xs px-2 py-0.5 rounded-full border ${statusColor(result.status)}`}>
               {result.status}
             </span>
             <span className="text-xs text-slate-500">{result.dry_run ? "Dry run" : "Applied"}</span>

@@ -1,5 +1,21 @@
-export const API_URL =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api";
+const HOSTED_API_URL = "https://instill-api.fly.dev/api";
+const LOCAL_API_URL = "http://localhost:8080/api";
+
+function defaultApiUrl(): string {
+  if (process.env.NEXT_PUBLIC_API_URL) return process.env.NEXT_PUBLIC_API_URL;
+  // No build-time override: pick by where the page is actually running so a
+  // local instance talks to the local API and the deployed dashboard keeps
+  // talking to the hosted API.
+  if (
+    typeof window !== "undefined" &&
+    !["localhost", "127.0.0.1"].includes(window.location.hostname)
+  ) {
+    return HOSTED_API_URL;
+  }
+  return LOCAL_API_URL;
+}
+
+export const API_URL = defaultApiUrl();
 
 export interface Project {
   id: string;

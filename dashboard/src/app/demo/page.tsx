@@ -26,6 +26,10 @@ const SEVERITY_STYLES: Record<string, string> = {
 
 export default function DemoPage() {
   const [description, setDescription] = useState("");
+  // The description the current parse result was generated from — the live
+  // textarea may have been edited since, and the created project must match
+  // the spec that was actually parsed.
+  const [parsedDescription, setParsedDescription] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ParseResult | null>(null);
   const [error, setError] = useState("");
@@ -49,6 +53,7 @@ export default function DemoPage() {
     try {
       const data = await api.demo.parse(description.trim());
       setResult(data);
+      setParsedDescription(description.trim());
     } catch (e: unknown) {
       setError(errorMessage(e));
     } finally {
@@ -63,7 +68,7 @@ export default function DemoPage() {
     try {
       const project = await api.projects.create({
         name: result.project,
-        description: description.trim(),
+        description: parsedDescription,
         stack: result.stack,
         intent_yaml: result.intent_yaml,
       });

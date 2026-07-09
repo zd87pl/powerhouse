@@ -143,3 +143,64 @@ def test_diagnose_endpoint_roundtrip():
     body = resp.json()
     assert body["category"] == "connection_refused"
     assert body["severity"] == "high"
+
+
+def test_parsed_project_name_is_always_accepted_by_create():
+    # Even absurdly long single words must yield a name POST /api/projects takes.
+    long_word = "rindfleischetikettierungsueberwachungsaufgabenuebertragungsgesetz"
+    resp = client.post(
+        "/api/demo/parse", json={"description": f"{long_word} platform for germany"}
+    )
+    assert resp.status_code == 200
+    project_name = resp.json()["project"]
+    assert len(project_name) <= 64
+
+    create = client.post(
+        "/api/projects", json={"name": project_name, "description": long_word}
+    )
+    assert create.status_code == 201, create.text
+
+
+def test_invalid_bearer_token_is_rejected_even_in_dev(monkeypatch):
+    # With Clerk configured, a garbage token must 401 — never fall through to
+    # another tenant's data (POWERHOUSE_ENV=test is a dev-auth environment).
+    monkeypatch.setenv("CLERK_SECRET_KEY", "sk_test_configured")
+    resp = client.get("/api/projects", headers={"Authorization": "Bearer not.a.jwt"})
+    assert resp.status_code == 401
+
+
+def test_api_key_create_upserts_instead_of_duplicating():
+    payload = {
+        "provider": "github",
+        "key_name": "github (setup wizard)",
+        "key_value": "token-one",
+    }
+    first = client.post("/api/keys", json=payload)
+    assert first.status_code == 201, first.text
+    second = client.post("/api/keys", json={**payload, "key_value": "token-two"})
+    assert second.status_code == 201, second.text
+    assert second.json()["id"] == first.json()["id"]
+
+    keys = client.get("/api/keys").json()
+    wizard_rows = [k for k in keys if k["key_name"] == "github (setup wizard)"]
+    assert len(wizard_rows) == 1
+
+
+def test_scalar_deploy_and_ci_shorthands_are_interpreted():
+    intent = IntentFile.from_dict({"project": "shorthand", "deploy": "vercel"})
+    assert intent.deploy.provider.value == "vercel"
+    assert "deploy_vercel" in intent.resource_keys
+
+    opted_out = IntentFile.from_dict({"project": "no-ci", "ci": "none"})
+    assert not opted_out.needs_ci
+
+
+def test_llm_string_list_fields_do_not_char_split():
+    from services.instill_api.main import _spec_response
+
+    resp = _spec_response(
+        {"project": "shop", "features": "storefront", "required_keys": "GitHub"},
+        "a shop",
+    )
+    assert resp.features == ["storefront"]
+    assert resp.required_keys == ["GitHub"]

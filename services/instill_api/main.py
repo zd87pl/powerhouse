@@ -49,7 +49,7 @@ from .schemas import (
     SetupValidationResponse,
 )
 from .diagnosis import diagnose_error
-from .intent_synthesis import spec_to_intent_yaml
+from .intent_synthesis import slugify_project, spec_to_intent_yaml
 from .secrets import SecretConfigError, decrypt_secret, encrypt_secret
 
 
@@ -400,9 +400,10 @@ def _get_jwks_client() -> jwt.PyJWKClient:
 async def get_clerk_user_id(request: Request) -> Optional[str]:
     """Extract Clerk user ID from JWT in Authorization header.
 
-    Returns None if no auth header is present. Raises HTTPException on
-    invalid/expired tokens — except in dev mode, where validation failures
-    fall through to the local dev tenant instead of locking the user out.
+    Returns None if no auth header is present, or in dev mode when Clerk
+    isn't configured at all (so a Clerk-less local instance doesn't 503).
+    Once CLERK_SECRET_KEY is set, invalid/expired tokens always raise 401 —
+    even in dev — so bad tokens can never fall through to another tenant.
     """
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
@@ -433,12 +434,8 @@ async def get_clerk_user_id(request: Request) -> Optional[str]:
             raise HTTPException(status_code=401, detail="Invalid token issuer")
         return payload.get("sub")  # Clerk user ID
     except jwt.ExpiredSignatureError:
-        if _dev_auth_allowed():
-            return None
         raise HTTPException(status_code=401, detail="Token expired")
     except jwt.InvalidTokenError as e:
-        if _dev_auth_allowed():
-            return None
         raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
 
 
@@ -472,8 +469,10 @@ async def get_current_tenant(
     if not _dev_auth_allowed():
         raise HTTPException(status_code=401, detail="Authentication required")
 
-    # Local development fallback only. Production must use Clerk.
-    tenant = session.query(Tenant).first()
+    # Local development fallback only. Production must use Clerk. Pin the
+    # fallback to a dedicated dev tenant — never `.first()`, which would
+    # serve whichever real tenant happens to sort first.
+    tenant = session.query(Tenant).filter(Tenant.clerk_id == "dev_user").first()
     if tenant is None:
         tenant = Tenant(
             id=gen_id(),
@@ -982,13 +981,22 @@ Return JSON with these exact keys:
         return _fallback_parse(data.description)
 
 
+def _as_str_list(value: Any) -> list[str]:
+    """Coerce an LLM-supplied list field: strings wrap, lists map, rest empty."""
+    if isinstance(value, str):
+        return [value] if value.strip() else []
+    if isinstance(value, list):
+        return [str(item) for item in value]
+    return []
+
+
 def _spec_response(parsed: dict[str, Any], description: str) -> ParseResponse:
     """Build a ParseResponse (with synthesized intent_yaml) from an LLM spec."""
-    project = str(parsed.get("project") or "my-project")
+    project = slugify_project(str(parsed.get("project") or "my-project"))
     stack = str(parsed.get("stack") or "nextjs")
     market = str(parsed.get("market") or "global")
-    features = [str(f) for f in parsed.get("features") or []]
-    tools = [str(t) for t in parsed.get("tools") or []]
+    features = _as_str_list(parsed.get("features"))
+    tools = _as_str_list(parsed.get("tools"))
     return ParseResponse(
         project=project,
         stack=stack,
@@ -996,8 +1004,7 @@ def _spec_response(parsed: dict[str, Any], description: str) -> ParseResponse:
         features=features,
         tools=tools,
         explanation=str(parsed.get("explanation") or ""),
-        required_keys=[str(k) for k in parsed.get("required_keys") or []]
-        or ["GitHub", "Vercel"],
+        required_keys=_as_str_list(parsed.get("required_keys")) or ["GitHub", "Vercel"],
         intent_yaml=spec_to_intent_yaml(
             project=project,
             stack=stack,
@@ -1124,7 +1131,7 @@ def _fallback_parse(description: str) -> ParseResponse:
         "as",
     }
     meaningful = [w for w in words if w not in stop_words and len(w) > 2][:3]
-    project = "-".join(meaningful) if meaningful else "my-project"
+    project = slugify_project("-".join(meaningful))
 
     # Generate explanation
     stack_name = {
@@ -2464,14 +2471,30 @@ async def create_api_key(
     except SecretConfigError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
 
-    key = ApiKey(
-        id=gen_id(),
-        tenant_id=tenant.id,
-        provider=data.provider,
-        key_name=data.key_name,
-        encrypted_value=encrypted_value,
+    # Upsert on (tenant, provider, key_name): re-saving from the setup
+    # wizard (or retrying after a failed validation) replaces the stored
+    # credential instead of accumulating duplicate rows.
+    key = (
+        session.query(ApiKey)
+        .filter(
+            ApiKey.tenant_id == tenant.id,
+            ApiKey.provider == data.provider,
+            ApiKey.key_name == data.key_name,
+        )
+        .first()
     )
-    session.add(key)
+    if key is not None:
+        key.encrypted_value = encrypted_value
+        key.created_at = datetime.now(timezone.utc)
+    else:
+        key = ApiKey(
+            id=gen_id(),
+            tenant_id=tenant.id,
+            provider=data.provider,
+            key_name=data.key_name,
+            encrypted_value=encrypted_value,
+        )
+        session.add(key)
     session.commit()
     session.refresh(key)
     return ApiKeyResponse.model_validate(key)

@@ -63,9 +63,18 @@ class CIConfig:
     secrets_scan: bool = True
 
 
-def _coerce_section(value: Any) -> Dict[str, Any]:
-    """Return a mapping for a config section, tolerating scalars and lists."""
-    return value if isinstance(value, dict) else {}
+def _coerce_section(value: Any, scalar_key: str = "") -> Dict[str, Any]:
+    """Return a mapping for a config section, tolerating shorthand scalars.
+
+    ``deploy: vercel`` means ``deploy: {provider: vercel}`` and ``ci: none``
+    means ``ci: {runner: none}`` — dropping the scalar silently would invert
+    the declared intent, so interpret it via ``scalar_key`` instead.
+    """
+    if isinstance(value, dict):
+        return value
+    if scalar_key and isinstance(value, str) and value.strip():
+        return {scalar_key: value.strip()}
+    return {}
 
 
 def _coerce_flag_section(value: Any) -> Dict[str, Any]:
@@ -193,8 +202,8 @@ class IntentFile:
     ) -> "IntentFile":
         monitoring_data = _coerce_flag_section(data.get("monitoring"))
         memory_data = _coerce_flag_section(data.get("memory"))
-        ci_data = _coerce_section(data.get("ci"))
-        deploy_data = _coerce_section(data.get("deploy"))
+        ci_data = _coerce_section(data.get("ci"), scalar_key="runner")
+        deploy_data = _coerce_section(data.get("deploy"), scalar_key="provider")
         deploy_provider_raw = deploy_data.get("provider", "none")
         try:
             deploy_provider = Provider(deploy_provider_raw)

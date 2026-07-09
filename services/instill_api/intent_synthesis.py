@@ -20,10 +20,11 @@ _FRONTEND_STACKS = {"nextjs", "remix", "astro", "static", "wordpress"}
 _BACKEND_STACKS = {"fastapi"}
 
 
-def _slugify(value: str) -> str:
+def slugify_project(value: str) -> str:
+    """Normalize a project name to a slug that ProjectCreate accepts (≤64)."""
     slug = re.sub(r"[^a-z0-9-]+", "-", (value or "").strip().lower())
     slug = re.sub(r"-{2,}", "-", slug).strip("-")
-    return slug[:64] or "my-project"
+    return slug[:64].strip("-") or "my-project"
 
 
 def deploy_provider_for_stack(stack: str) -> str:
@@ -50,7 +51,7 @@ def spec_to_intent_yaml(
     always declares github + deploy + monitoring + ci resources so a first
     reconcile reports every provider honestly (skipped until keys exist).
     """
-    doc: dict = {"project": _slugify(project)}
+    doc: dict = {"project": slugify_project(project)}
     if description:
         doc["description"] = description.strip()
     doc["stack"] = (stack or "nextjs").strip().lower() or "nextjs"
