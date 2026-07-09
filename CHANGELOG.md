@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — End-to-end MVP: describe → project → reconcile → diagnose
+- Intent synthesis (`services/instill_api/intent_synthesis.py`): parse results now include a
+  ready-to-use `.powerhouse.yml`, and `POST /api/projects` synthesizes the intent from the
+  description when none is supplied — the "declare the business" flow works end to end with
+  zero API keys.
+- Honest reconciliation statuses: skipped resource checks are reported separately from errors;
+  a zero-key reconcile records the project as `action_required` and the run as `skipped`
+  ("connect provider credentials") instead of a fake failure. Unwired agent types are recorded
+  as `skipped` instead of green `succeeded`.
+- Demo sandbox: parse results show the generated intent and a "Create this project" action;
+  the page now talks to the local API by default instead of a hardcoded production host.
+- Setup wizard actually saves keys (encrypted) before validating, and validation checks the
+  statuses the backend really returns; the deploy step honestly points at setup.sh/run_api.py.
+- Keyed-mode coherence: GitHub reconciles idempotently (no more re-create 422 loops), resolver
+  diffs compare declared keys only, autofix alerts can carry a target repo
+  (`AUTOFIX_DEFAULT_REPO`), and Clerk JWKS is configurable (`CLERK_JWKS_URL`) with dev-mode
+  fallthrough.
+- Intent schema tolerates the README's own example (`monitoring: sentry+phoenix` shorthand,
+  unknown `ci.runner` values, `env: null`).
+- Repo hygiene: fixed a broken `.gitignore` line that had literal `\n`s; untracked the
+  committed `instill.db` (a fresh clone no longer inherits the maintainer's data) and
+  `landing/.next/`; SQLite path anchored to the repo root; CI secret scan is now a real gate.
+- New `tests/test_e2e_flow.py` exercises the whole zero-key loop over HTTP; `tests/conftest.py`
+  isolates the suite from ambient credentials. Suite: 53 → 61 tests.
+
 ### Added — Autofix: error diagnosis
 - Heuristic error-diagnosis engine (`services/instill_api/diagnosis.py`): classifies a
   stack trace into category, severity, root cause, concrete fix steps, and the files most
