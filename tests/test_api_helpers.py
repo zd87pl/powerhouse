@@ -22,7 +22,10 @@ def test_reconciliation_does_not_mark_skipped_resources_synced(monkeypatch):
 
     assert summary["healthy"] is False
     assert summary["by_status"].get("skipped", 0) >= 1
-    assert _status_from_summary(summary) == "error"
+    # Skipped-only runs need setup — they are neither synced nor failed.
+    assert summary["errors"] == []
+    assert len(summary["skips"]) >= 1
+    assert _status_from_summary(summary) == "action_required"
 
 
 def test_secret_encryption_round_trip(monkeypatch):

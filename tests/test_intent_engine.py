@@ -208,7 +208,9 @@ class TestReconciliation:
         ]
         summary = reconcile_summary(results)
         assert summary["healthy"] is False
-        assert summary["errors"] == ["github_repo: missing credentials"]
+        # Skips are reported distinctly from errors — but never as healthy.
+        assert summary["errors"] == []
+        assert summary["skips"] == ["github_repo: missing credentials"]
 
     def test_declared_state_github(self):
         intent = IntentFile.from_dict({"project": "foo", "description": "Bar"})

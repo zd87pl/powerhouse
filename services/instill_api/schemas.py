@@ -198,6 +198,7 @@ class ParseResponse(BaseModel):
     tools: List[str]
     explanation: str
     required_keys: List[str]
+    intent_yaml: str = ""  # Synthesized .powerhouse.yml ready for project creation
 
 
 # ── Error Diagnosis (autofix) ──

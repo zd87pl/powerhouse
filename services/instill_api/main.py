@@ -49,6 +49,7 @@ from .schemas import (
     SetupValidationResponse,
 )
 from .diagnosis import diagnose_error
+from .intent_synthesis import spec_to_intent_yaml
 from .secrets import SecretConfigError, decrypt_secret, encrypt_secret
 
 
@@ -900,15 +901,7 @@ Rules:
             json_match = re.search(r"\{[\s\S]*\}", content)
             if json_match:
                 parsed = json.loads(json_match.group(0))
-                return ParseResponse(
-                    project=parsed.get("project", "my-project"),
-                    stack=parsed.get("stack", "nextjs"),
-                    market=parsed.get("market", "global"),
-                    features=parsed.get("features", []),
-                    tools=parsed.get("tools", []),
-                    explanation=parsed.get("explanation", ""),
-                    required_keys=parsed.get("required_keys", ["GitHub", "Vercel"]),
-                )
+                return _spec_response(parsed, data.description)
             else:
                 return _fallback_parse(data.description)
 
@@ -973,17 +966,36 @@ Return JSON with these exact keys:
                 .removeprefix("```")
                 .strip()
             )
-            return ParseResponse(
-                project=parsed.get("project", "my-project"),
-                stack=parsed.get("stack", "nextjs"),
-                market=parsed.get("market", "global"),
-                features=parsed.get("features", []),
-                tools=parsed.get("tools", []),
-                explanation=parsed.get("explanation", ""),
-                required_keys=parsed.get("required_keys", ["GitHub", "Vercel"]),
-            )
+            return _spec_response(parsed, data.description)
     except Exception:
         return _fallback_parse(data.description)
+
+
+def _spec_response(parsed: dict[str, Any], description: str) -> ParseResponse:
+    """Build a ParseResponse (with synthesized intent_yaml) from an LLM spec."""
+    project = str(parsed.get("project") or "my-project")
+    stack = str(parsed.get("stack") or "nextjs")
+    market = str(parsed.get("market") or "global")
+    features = [str(f) for f in parsed.get("features") or []]
+    tools = [str(t) for t in parsed.get("tools") or []]
+    return ParseResponse(
+        project=project,
+        stack=stack,
+        market=market,
+        features=features,
+        tools=tools,
+        explanation=str(parsed.get("explanation") or ""),
+        required_keys=[str(k) for k in parsed.get("required_keys") or []]
+        or ["GitHub", "Vercel"],
+        intent_yaml=spec_to_intent_yaml(
+            project=project,
+            stack=stack,
+            market=market,
+            features=features,
+            tools=tools,
+            description=description,
+        ),
+    )
 
 
 def _fallback_parse(description: str) -> ParseResponse:
@@ -1129,6 +1141,14 @@ def _fallback_parse(description: str) -> ParseResponse:
         tools=tools,
         explanation=explanation,
         required_keys=required_keys,
+        intent_yaml=spec_to_intent_yaml(
+            project=project,
+            stack=stack,
+            market=market,
+            features=features,
+            tools=tools,
+            description=description,
+        ),
     )
 
 
@@ -2079,6 +2099,11 @@ def _reconciliation_summary_text(summary: dict[str, Any]) -> str:
         return "Declared resources are in sync."
     if not by_status:
         return "No declared resources were checked."
+    if set(by_status.keys()) == {"skipped"}:
+        return (
+            f"{by_status['skipped']} resource check(s) skipped — "
+            "connect provider credentials in Setup to enable them."
+        )
     parts = [f"{count} {status}" for status, count in sorted(by_status.items())]
     return "Resource check completed: " + ", ".join(parts) + "."
 
@@ -2101,13 +2126,34 @@ async def create_project(
     session: Session = Depends(get_session),
     tenant: Tenant = Depends(get_current_tenant),
 ):
+    intent_yaml = data.intent_yaml
+    stack = data.stack
+    setup_summary = "Project registered in Powerhouse."
+    if not intent_yaml.strip():
+        # Declare-the-business path: synthesize the intent from the
+        # description (or the name) so reconciliation has resources to check.
+        parsed = _fallback_parse(data.description or data.name)
+        if not stack or stack == "custom":
+            stack = parsed.stack
+        intent_yaml = spec_to_intent_yaml(
+            project=data.name,
+            stack=stack,
+            market=parsed.market,
+            features=parsed.features,
+            tools=parsed.tools,
+            description=data.description,
+        )
+        setup_summary = (
+            "Project registered in Powerhouse. Intent synthesized from the "
+            "description — review it in the Intent tab, then reconcile."
+        )
     project = Project(
         id=gen_id(),
         tenant_id=tenant.id,
         name=data.name,
         description=data.description,
-        stack=data.stack,
-        intent_yaml=data.intent_yaml,
+        stack=stack,
+        intent_yaml=intent_yaml,
         status="pending",
     )
     session.add(project)
@@ -2118,7 +2164,7 @@ async def create_project(
         run_type="setup",
         status="succeeded",
         title="Project created",
-        summary="Project registered in Powerhouse.",
+        summary=setup_summary,
     )
     session.commit()
     session.refresh(project)
@@ -2342,11 +2388,13 @@ async def trigger_agent(
     session.commit()
 
     try:
-        output = _run_agent(data.agent_type, data.input_spec, project.intent_yaml)
-        run.status = "succeeded"
+        status, output = _run_agent(
+            data.agent_type, data.input_spec, project.intent_yaml
+        )
+        run.status = status
         run.output = output
         run.completed_at = datetime.now(timezone.utc)
-        project_run.status = "succeeded"
+        project_run.status = status
         project_run.summary = output
         project_run.log = output
         project_run.completed_at = run.completed_at
@@ -2441,7 +2489,13 @@ async def delete_api_key(
 def _status_from_summary(summary: dict) -> str:
     if summary.get("errors"):
         return "error"
-    return "synced" if summary.get("healthy") else "drifted"
+    if summary.get("healthy"):
+        return "synced"
+    by_status = summary.get("by_status") or {}
+    if by_status and set(by_status.keys()) == {"skipped"}:
+        # All checks were skipped (missing credentials): needs setup, not broken.
+        return "action_required"
+    return "drifted"
 
 
 def _serialize_run_log(results: list[dict], summary: dict) -> str:
@@ -2499,12 +2553,14 @@ def _run_reconciliation(intent_yaml: str, dry_run: bool = False):
     return results_dict, summary
 
 
-def _run_agent(agent_type: str, input_spec: str, intent_yaml: str = "") -> str:
-    """Run a synchronous, deterministic agent task.
+def _run_agent(
+    agent_type: str, input_spec: str, intent_yaml: str = ""
+) -> tuple[str, str]:
+    """Run a synchronous, deterministic agent task. Returns (status, output).
 
     The ``autofix`` agent performs heuristic error diagnosis on the supplied
     error text (``input_spec``). Other agent types are not wired to a runtime
-    yet and return an explicit message.
+    yet — they are recorded honestly as ``skipped``, never as ``succeeded``.
     """
     if agent_type == "autofix":
         stripped = input_spec.strip()
@@ -2512,9 +2568,9 @@ def _run_agent(agent_type: str, input_spec: str, intent_yaml: str = "") -> str:
         diagnosis = diagnose_error(
             title=first_line, message=input_spec, stack_trace=input_spec
         )
-        return diagnosis.format_text()
+        return "succeeded", diagnosis.format_text()
 
-    return (
+    return "skipped", (
         f"{agent_type} agent runtime is not wired to this API yet. "
         "Use reconciliation for infrastructure checks; agent execution needs the "
         "orchestrator worker integration before it can make changes."

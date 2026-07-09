@@ -119,14 +119,16 @@ def test_demo_diagnose_endpoint_is_public_and_heuristic(monkeypatch):
 
 
 def test_autofix_agent_runs_diagnosis():
-    output = _run_agent(
+    status, output = _run_agent(
         "autofix",
         "File \"app/main.py\", line 10\nModuleNotFoundError: No module named 'redis'",
     )
+    assert status == "succeeded"
     assert "Root cause" in output
     assert "redis" in output
 
 
 def test_non_autofix_agent_reports_not_wired():
-    output = _run_agent("research", "look into vector DBs")
+    status, output = _run_agent("research", "look into vector DBs")
+    assert status == "skipped"
     assert "not wired" in output

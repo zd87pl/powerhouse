@@ -85,14 +85,16 @@ def reconcile_summary(results: List[ReconciliationResult]) -> Dict[str, Any]:
         ResourceStatus.SKIPPED,
         ResourceStatus.UNKNOWN,
     }
+    skips: List[str] = []
     for r in results:
         key = r.status.value
         by_status[key] = by_status.get(key, 0) + 1
-        total_drifts += len(r.drifts_found) + r.drifts_resolved
+        total_drifts += len(r.drifts_found)
         if r.error_message:
             errors.append(f"{r.resource_key}: {r.error_message}")
         elif r.status == ResourceStatus.SKIPPED:
-            errors.append(f"{r.resource_key}: {r.action_taken or 'skipped'}")
+            # Skipped work is not an error, but it must never read as healthy.
+            skips.append(f"{r.resource_key}: {r.action_taken or 'skipped'}")
     healthy = (
         bool(results)
         and not errors
@@ -103,6 +105,7 @@ def reconcile_summary(results: List[ReconciliationResult]) -> Dict[str, Any]:
         "by_status": by_status,
         "total_drifts": total_drifts,
         "errors": errors,
+        "skips": skips,
         "healthy": healthy,
     }
 
